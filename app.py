@@ -1,82 +1,69 @@
 import streamlit as st
 import pandas as pd
-from io import BytesIO
+from io import StringIO
 
-st.set_page_config(page_title="Buscador Logístico", layout="wide")
+st.set_page_config(page_title="ERP Logística Móvil", layout="wide")
 
-st.title("📦 Sistema de Peticiones Inteligente")
+st.title("📦 Buscador en Vivo")
 
 if 'carrito' not in st.session_state:
     st.session_state.carrito = []
 
-# --- BARRA LATERAL ---
+# --- PANEL LATERAL ---
 with st.sidebar:
-    st.header("1. Cargar Catálogo")
-    archivo = st.file_uploader("Sube tu Excel o CSV", type=['xlsx', 'csv'])
-    st.divider()
-    ref_ped = st.text_input("Referencia Pedido", "PED-001")
-    origen = st.text_input("Almacén Origen", "ALM-01")
-    destino = st.text_input("Almacén Destino", "ALM-02")
+    st.header("1. Cargar Datos")
+    # Ahora aceptamos solo CSV para evitar el error de Python 3.13
+    archivo = st.file_uploader("Sube tu catálogo (Formato CSV)", type=['csv'])
+    st.info("💡 Consejo: Guarda tu Excel como 'CSV (delimitado por comas)'")
     
-    if st.button("🗑️ Vaciar Carrito"):
+    st.divider()
+    ref_ped = st.text_input("Ref. Pedido", "001")
+    if st.button("🗑️ Vaciar"):
         st.session_state.carrito = []
         st.rerun()
 
-# --- LÓGICA DE BÚSQUEDA Y REJILLA ---
+# --- BUSCADOR ---
 if archivo:
-    # Cargar datos
-    df = pd.read_excel(archivo) if archivo.name.endswith('xlsx') else pd.read_csv(archivo)
-    
-    # Buscador en vivo (Escribe y filtra)
-    st.subheader("🔍 Buscador de variantes")
-    busqueda = st.text_input("Escribe referencia, nombre, color o talla...", "").strip().lower()
-    
-    if busqueda:
-        # Filtra en todas las columnas relevantes
-        mask = (
-            df['Referencia'].astype(str).str.lower().str.contains(busqueda) |
-            df['Nombre'].astype(str).str.lower().str.contains(busqueda) |
-            df['Talla'].astype(str).str.lower().str.contains(busqueda) |
-            df['Color'].astype(str).str.lower().str.contains(busqueda)
-        )
-        resultados = df[mask].head(15) # Limitamos a 15 para velocidad en móvil
+    # Leemos el CSV (delimitado por comas o puntos y comas)
+    try:
+        df = pd.read_csv(archivo, sep=None, engine='python')
+        df.columns = df.columns.str.strip() # Limpiar espacios
         
-        if not resultados.empty:
-            for _, fila in resultados.iterrows():
-                with st.container():
-                    col_info, col_cant, col_btn = st.columns([3, 1, 1])
-                    with col_info:
-                        st.write(f"**{fila['Referencia']}** | {fila['Nombre']}\n({fila['Talla']} - {fila['Color']})")
-                    with col_cant:
-                        c = st.number_input(f"Cant.", min_value=0, step=1, key=f"q_{fila['EAN']}")
-                    with col_btn:
-                        if st.button("Añadir", key=f"add_{fila['EAN']}"):
-                            if c > 0:
+        busqueda = st.text_input("🔍 Escribe Ref, Talla o Color:").lower().strip()
+
+        if busqueda:
+            # Filtra en todas las columnas
+            mask = df.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)
+            res = df[mask].head(15)
+
+            if not res.empty:
+                for _, fila in res.iterrows():
+                    with st.expander(f"➕ {fila['Referencia']} | {fila['Talla']} | {fila['Color']}"):
+                        cant = st.number_input("Cantidad", min_value=0, step=1, key=f"q_{fila['EAN']}")
+                        if st.button("Añadir", key=f"btn_{fila['EAN']}"):
+                            if cant > 0:
                                 st.session_state.carrito.append({
-                                    'EAN': fila['EAN'], 'Origen': origen, 'Destino': destino,
-                                    'Referencia_Pedido': ref_ped, 'Cantidad': c
+                                    'EAN': fila['EAN'], 'Ref': fila['Referencia'], 
+                                    'Cant': cant, 'Pedido': ref_ped
                                 })
-                                st.toast(f"Añadido EAN {fila['EAN']}")
-        else:
-            st.warning("No hay coincidencias.")
-    
-    # --- RESUMEN Y EXPORTACIÓN ---
-    if st.session_state.carrito:
-        st.divider()
-        st.subheader("📋 Resumen para Exportar")
-        df_res = pd.DataFrame(st.session_state.carrito)
-        st.dataframe(df_res, use_container_width=True)
-        
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df_res.to_excel(writer, index=False)
-        
-        st.download_button(
-            label="📥 DESCARGAR EXCEL PARA ERP",
-            data=output.getvalue(),
-            file_name=f"{ref_ped}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+                                st.toast("¡Añadido!")
+            else:
+                st.warning("No hay coincidencias.")
+
+        # --- EXPORTAR ---
+        if st.session_state.carrito:
+            st.divider()
+            df_res = pd.DataFrame(st.session_state.carrito)
+            st.write("### Carrito:")
+            st.dataframe(df_res, use_container_width=True)
+            
+            # Descarga en CSV (para que no falle nunca)
+            csv_data = df_res.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 DESCARGAR PEDIDO (CSV)", data=csv_data, file_name=f"pedido_{ref_ped}.csv")
+
+    except Exception as e:
+        st.error(f"Error al leer el archivo: {e}")
 else:
-    st.info("👈 Abre el menú lateral izquierdo para subir tu catálogo.")
+    st.warning("👈 Sube tu catálogo en formato CSV desde el menú lateral.")
+
   
