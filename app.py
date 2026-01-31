@@ -19,14 +19,9 @@ def cargar_inventario():
 
 df_inv = cargar_inventario()
 
-# Inicializamos el carrito y el estado del buscador
+# Inicializamos el carrito
 if 'carrito' not in st.session_state:
     st.session_state.carrito = []
-if 'busqueda_input' not in st.session_state:
-    st.session_state.busqueda_input = ""
-
-def limpiar_buscador():
-    st.session_state.busqueda_input = ""
 
 st.title("📦 Sistema de Peticiones Ágil")
 
@@ -45,33 +40,34 @@ st.divider()
 
 # --- SECCIÓN 2: BUSCADOR RÁPIDO ---
 if df_inv is not None:
-    # Usamos st.session_state para poder limpiar el campo automáticamente
-    busqueda = st.text_input("🔍 Buscar y Añadir", 
-                             value=st.session_state.busqueda_input, 
-                             key="buscador_principal",
-                             placeholder="Escribe referencia o nombre...")
+    busqueda = st.text_input("🔍 Buscar productos", placeholder="Escribe referencia o nombre...")
 
     if busqueda:
         mask = df_inv.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)
         resultados = df_inv[mask].head(8)
 
         for _, fila in resultados.iterrows():
-            col_info, col_btn = st.columns([4, 1])
+            col_info, col_btn = st.columns([3, 1])
             col_info.write(f"**{fila['Referencia']}** - {fila['Nombre']} ({fila['Talla']}/{fila['Color']})")
             
-            # Al pulsar "Añadir", se guarda y se limpia el buscador
-            if col_btn.button("Añadir", key=f"add_{fila['EAN']}", use_container_width=True):
-                st.session_state.carrito.append({
-                    'EAN': fila['EAN'],
-                    'Origen': origen,
-                    'Destino': destino,
-                    'Referencia': fila['Referencia'],
-                    'Unidades': 1 # Cantidad inicial por defecto
-                })
-                st.toast(f"✅ {fila['Referencia']} añadido")
-                # Forzamos la limpieza para la siguiente búsqueda
-                st.session_state.busqueda_input = ""
-                st.rerun()
+            # Verificamos si este EAN ya está en el carrito para cambiar el estilo del botón
+            ya_en_carrito = any(item['EAN'] == fila['EAN'] for item in st.session_state.carrito)
+            
+            # Lógica de botón dinámico
+            if ya_en_carrito:
+                col_btn.button("✅ Añadido", key=f"btn_{fila['EAN']}", use_container_width=True, type="primary")
+                # El type="primary" suele ser azul/verde según el tema, pero visualmente resalta que ya está.
+            else:
+                if col_btn.button("Añadir", key=f"btn_{fila['EAN']}", use_container_width=True):
+                    st.session_state.carrito.append({
+                        'EAN': fila['EAN'],
+                        'Origen': origen,
+                        'Destino': destino,
+                        'Referencia': fila['Referencia'],
+                        'Unidades': 1
+                    })
+                    st.toast(f"✅ {fila['Referencia']} añadido")
+                    st.rerun()
 
     # --- SECCIÓN 3: REVISIÓN DE CANTIDADES ---
     if st.session_state.carrito:
@@ -82,7 +78,6 @@ if df_inv is not None:
             cols = st.columns([2, 1, 0.5])
             cols[0].write(f"**{item['Referencia']}**")
             
-            # Aquí es donde el usuario pone la cantidad real
             nueva_cant = cols[1].number_input("Cant.", min_value=1, value=int(item['Unidades']), key=f"edit_{i}")
             st.session_state.carrito[i]['Unidades'] = nueva_cant
             
@@ -110,7 +105,7 @@ if df_inv is not None:
                 st.download_button(
                     label="📥 CONFIRMAR Y GENERAR EXCEL",
                     data=output.getvalue(),
-                    file_name=f"peticion_{ref_peticion}.xlsx",
+                    file_name=f"peticion_{ref_peticion if ref_peticion else 'sin_ref'}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
