@@ -1,69 +1,76 @@
 import streamlit as st
 import pandas as pd
-from io import StringIO
 
-st.set_page_config(page_title="ERP Logística Móvil", layout="wide")
+st.set_page_config(page_title="Buscador Predictivo", layout="wide")
 
-st.title("📦 Buscador en Vivo")
+st.markdown("""
+    <style>
+    .stTextInput > div > div > input { background-color: #f0f2f6; }
+    </style>
+    """, unsafe_allow_html=True)
+
+st.title("🔍 Buscador Predictivo")
 
 if 'carrito' not in st.session_state:
     st.session_state.carrito = []
 
 # --- PANEL LATERAL ---
 with st.sidebar:
-    st.header("1. Cargar Datos")
-    # Ahora aceptamos solo CSV para evitar el error de Python 3.13
-    archivo = st.file_uploader("Sube tu catálogo (Formato CSV)", type=['csv'])
-    st.info("💡 Consejo: Guarda tu Excel como 'CSV (delimitado por comas)'")
-    
+    st.header("📦 Carga de Datos")
+    archivo = st.file_uploader("Sube tu catálogo (CSV)", type=['csv'])
     st.divider()
-    ref_ped = st.text_input("Ref. Pedido", "001")
-    if st.button("🗑️ Vaciar"):
+    ref_ped = st.text_input("Referencia Pedido", "PED-001")
+    if st.button("🗑️ Limpiar Carrito"):
         st.session_state.carrito = []
         st.rerun()
 
-# --- BUSCADOR ---
+# --- LÓGICA DE BÚSQUEDA PREDICTIVA ---
 if archivo:
-    # Leemos el CSV (delimitado por comas o puntos y comas)
     try:
+        # Cargamos el CSV una sola vez
         df = pd.read_csv(archivo, sep=None, engine='python')
-        df.columns = df.columns.str.strip() # Limpiar espacios
         
-        busqueda = st.text_input("🔍 Escribe Ref, Talla o Color:").lower().strip()
+        # El buscador "mágico"
+        query = st.text_input("Empieza a escribir (Ref, Color, Talla...)", placeholder="Ej: Camiseta Azul L").lower().strip()
 
-        if busqueda:
-            # Filtra en todas las columnas
-            mask = df.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)
-            res = df[mask].head(15)
+        if query:
+            # Esta línea hace la magia predictiva: busca en todas las columnas a la vez
+            mask = df.apply(lambda row: row.astype(str).str.contains(query, case=False).any(), axis=1)
+            resultados = df[mask].head(12) # Mostramos pocos para que vuele en el móvil
 
-            if not res.empty:
-                for _, fila in res.iterrows():
-                    with st.expander(f"➕ {fila['Referencia']} | {fila['Talla']} | {fila['Color']}"):
-                        cant = st.number_input("Cantidad", min_value=0, step=1, key=f"q_{fila['EAN']}")
-                        if st.button("Añadir", key=f"btn_{fila['EAN']}"):
-                            if cant > 0:
-                                st.session_state.carrito.append({
-                                    'EAN': fila['EAN'], 'Ref': fila['Referencia'], 
-                                    'Cant': cant, 'Pedido': ref_ped
-                                })
-                                st.toast("¡Añadido!")
+            if not resultados.empty:
+                st.write(f"Resultados para '{query}':")
+                for _, fila in resultados.iterrows():
+                    # Cada resultado es un desplegable para ahorrar espacio
+                    with st.expander(f"👕 {fila['Referencia']} - {fila['Color']} ({fila['Talla']})"):
+                        c1, c2 = st.columns([1, 1])
+                        with c1:
+                            cant = st.number_input("Cantidad", min_value=0, key=f"n_{fila['EAN']}")
+                        with c2:
+                            if st.button("Añadir", key=f"b_{fila['EAN']}"):
+                                if cant > 0:
+                                    st.session_state.carrito.append({
+                                        'EAN': fila['EAN'], 'Ref': fila['Referencia'], 
+                                        'Cant': cant, 'Pedido': ref_ped
+                                    })
+                                    st.toast(f"Añadido: {fila['Referencia']}")
             else:
-                st.warning("No hay coincidencias.")
+                st.info("No hay coincidencias exactas.")
+        else:
+            st.info("👋 Escribe algo arriba para empezar a filtrar el catálogo.")
 
-        # --- EXPORTAR ---
+        # --- RESUMEN DE COMPRA ---
         if st.session_state.carrito:
             st.divider()
-            df_res = pd.DataFrame(st.session_state.carrito)
-            st.write("### Carrito:")
-            st.dataframe(df_res, use_container_width=True)
+            st.subheader("🛒 Pedido actual")
+            df_car = pd.DataFrame(st.session_state.carrito)
+            st.dataframe(df_car, use_container_width=True)
             
-            # Descarga en CSV (para que no falle nunca)
-            csv_data = df_res.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 DESCARGAR PEDIDO (CSV)", data=csv_data, file_name=f"pedido_{ref_ped}.csv")
+            csv_final = df_car.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 DESCARGAR PEDIDO CSV", data=csv_final, file_name=f"{ref_ped}.csv")
 
     except Exception as e:
-        st.error(f"Error al leer el archivo: {e}")
+        st.error("Error al leer el archivo. Asegúrate de que es un CSV válido.")
 else:
-    st.warning("👈 Sube tu catálogo en formato CSV desde el menú lateral.")
-
-  
+    st.warning("👈 Por favor, sube el archivo CSV en el menú lateral.")
+    
