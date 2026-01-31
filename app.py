@@ -3,7 +3,7 @@ import pandas as pd
 
 st.set_page_config(page_title="ERP Logística", layout="wide")
 
-st.title("🚀 Gestión de Pedidos Predictivo")
+st.title("🚀 Buscador Predictivo de Variantes")
 
 if 'carrito' not in st.session_state:
     st.session_state.carrito = []
@@ -15,8 +15,6 @@ with st.sidebar:
     
     st.divider()
     st.subheader("2. Datos del Movimiento")
-    
-    # Los 4 almacenes solicitados
     lista_almacenes = ["ALM-CENTRAL", "ALM-NORTE", "ALM-SUR", "ALM-TIENDA"]
     origen = st.selectbox("Almacén de Origen", options=lista_almacenes)
     destino = st.selectbox("Almacén de Destino", options=lista_almacenes)
@@ -26,66 +24,60 @@ with st.sidebar:
         st.session_state.carrito = []
         st.rerun()
 
-# --- BUSCADOR PREDICTIVO ---
+# --- BUSCADOR DINÁMICO REAL ---
 if archivo:
     try:
-        # Cargamos el catálogo
         df = pd.read_csv(archivo, sep=None, engine='python')
         df.columns = df.columns.str.strip()
         
-        # Creamos la etiqueta de búsqueda combinada
-        df['etiqueta'] = (
-            df['Referencia'].astype(str) + " - " + 
-            df['Nombre'].astype(str) + " (" + 
-            df['Talla'].astype(str) + " / " + 
-            df['Color'].astype(str) + ")"
-        )
-        
+        # Caja de texto para búsqueda libre
         st.subheader("🔍 Buscar Variante")
-        seleccion = st.selectbox(
-            "Empieza a escribir la referencia (6 dígitos) o nombre...",
-            options=[""] + sorted(df['etiqueta'].unique()),
-            format_func=lambda x: "🔎 Buscar..." if x == "" else x
-        )
+        busqueda = st.text_input("Escribe referencia, talla o color...", placeholder="Ej: 100101 o Azul").strip().lower()
 
-        if seleccion:
-            # Extraemos los datos del producto seleccionado
-            item = df[df['etiqueta'] == seleccion].iloc[0]
-            
-            with st.container():
-                st.info(f"📍 Seleccionado: {item['Nombre']} | EAN: {item['EAN']}")
-                c1, c2 = st.columns(2)
-                with c1:
-                    unidades = st.number_input("Unidades", min_value=1, step=1, key="uds")
-                with c2:
-                    if st.button("➕ Añadir al Pedido", use_container_width=True):
-                        st.session_state.carrito.append({
-                            'Almacén de Origen': origen,
-                            'Almacén de Destino': destino,
-                            'EAN': item['EAN'],
-                            'Unidades': unidades
-                        })
-                        st.toast(f"EAN {item['EAN']} añadido")
+        if busqueda:
+            # Filtramos el dataframe en tiempo real según lo que escribes
+            mask = (
+                df['Referencia'].astype(str).str.contains(busqueda, case=False) |
+                df['Nombre'].astype(str).str.contains(busqueda, case=False) |
+                df['Color'].astype(str).str.contains(busqueda, case=False) |
+                df['Talla'].astype(str).str.contains(busqueda, case=False)
+            )
+            resultados = df[mask].head(10) # Limitamos a 10 para no colapsar el móvil
 
-        # --- EXPORTACIÓN PARA ERP ---
+            if not resultados.empty:
+                st.write("### Sugerencias encontradas:")
+                for _, fila in resultados.iterrows():
+                    # Formato de "Tarjeta" para cada resultado
+                    with st.expander(f"📍 {fila['Referencia']} - {fila['Nombre']} ({fila['Talla']}/{fila['Color']})"):
+                        st.write(f"**EAN:** {fila['EAN']}")
+                        col_cant, col_btn = st.columns([1, 1])
+                        with col_cant:
+                            unidades = st.number_input("Unidades", min_value=1, step=1, key=f"u_{fila['EAN']}")
+                        with col_btn:
+                            if st.button("➕ Añadir", key=f"b_{fila['EAN']}", use_container_width=True):
+                                st.session_state.carrito.append({
+                                    'Almacén de Origen': origen,
+                                    'Almacén de Destino': destino,
+                                    'EAN': fila['EAN'],
+                                    'Unidades': unidades
+                                })
+                                st.success(f"EAN {fila['EAN']} añadido")
+            else:
+                st.warning("No hay coincidencias.")
+        else:
+            st.info("Escribe algo arriba para ver opciones...")
+
+        # --- EXPORTACIÓN ---
         if st.session_state.carrito:
             st.divider()
-            st.subheader("📋 Pedido para Importar")
+            st.subheader("📋 Resumen Pedido")
             df_res = pd.DataFrame(st.session_state.carrito)
-            
-            # Mostramos el resumen
             st.dataframe(df_res, use_container_width=True)
             
-            # Generamos el CSV de salida con las columnas exactas
             csv_final = df_res.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 DESCARGAR CSV PARA ERP",
-                data=csv_final,
-                file_name=f"pedido_{origen}_{destino}.csv",
-                mime="text/csv"
-            )
+            st.download_button("📥 DESCARGAR CSV PARA ERP", data=csv_final, file_name=f"pedido_{origen}_{destino}.csv")
 
     except Exception as e:
-        st.error(f"Error: El CSV debe tener las columnas EAN, Referencia, Nombre, Talla, Color. {e}")
+        st.error(f"Error: Revisa que el CSV tenga EAN, Referencia, Nombre, Talla, Color. {e}")
 else:
-    st.info("👈 Por favor, carga el catálogo CSV en el menú lateral.")
+    st.info("👈 Sube el catálogo CSV en el menú lateral.")
