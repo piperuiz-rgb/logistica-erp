@@ -41,7 +41,7 @@ st.divider()
 # --- SECCIÓN 2: BUSCADOR PREDICTIVO ---
 if df_inv is not None:
     st.subheader("🔍 Buscador de Productos")
-    busqueda = st.text_input("Escribe Ref, Nombre, Color...", placeholder="Buscar variantes...").strip().lower()
+    busqueda = st.text_input("Escribe Ref, Nombre, Color...", placeholder="Buscar productos...").strip().lower()
 
     if busqueda:
         mask = df_inv.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)
@@ -66,25 +66,20 @@ if df_inv is not None:
         else:
             st.warning("No hay coincidencias.")
     
-    # --- SECCIÓN 3: RESUMEN CON EDICIÓN DINÁMICA ---
+    # --- SECCIÓN 3: REVISIÓN DEL PEDIDO (SIN EAN) ---
     if st.session_state.carrito:
         st.divider()
-        st.subheader("📋 Revisión del Pedido")
-        
-        # Cabecera de la lista para claridad
-        header_cols = st.columns([2, 1.5, 0.5])
-        header_cols[0].write("**Producto**")
-        header_cols[1].write("**Cantidad**")
+        st.subheader("📋 Revisión de Líneas")
         
         # Iteramos sobre el carrito para permitir edición
         for i, item in enumerate(st.session_state.carrito):
             cols = st.columns([2, 1.5, 0.5])
             
-            # Info del producto
-            cols[0].write(f"{item['Referencia']}\n\n{item['EAN']}")
+            # Solo Referencia (El EAN sigue guardado internamente para el Excel)
+            cols[0].write(f"**{item['Referencia']}**")
             
-            # Editor de cantidad: al cambiar aquí, se actualiza el carrito
-            nueva_cant = cols[1].number_input("Editar", min_value=1, value=int(item['Unidades']), key=f"edit_{i}_{item['EAN']}", label_visibility="collapsed")
+            # Editor de cantidad
+            nueva_cant = cols[1].number_input("Cant.", min_value=1, value=int(item['Unidades']), key=f"edit_{i}_{item['EAN']}", label_visibility="collapsed")
             st.session_state.carrito[i]['Unidades'] = nueva_cant
             
             # Botón eliminar
@@ -98,6 +93,7 @@ if df_inv is not None:
                 wb = load_workbook('plantilla.xlsx')
                 ws = wb.active 
                 
+                # Rellenamos la plantilla: 1:EAN, 2:Origen, 3:Destino, 4:Ref, 5:Cant
                 for i, row in enumerate(st.session_state.carrito):
                     fila_excel = i + 2
                     ws.cell(row=fila_excel, column=1, value=row['EAN'])
@@ -122,10 +118,10 @@ if df_inv is not None:
             except Exception as e:
                 st.error(f"Error con la plantilla: {e}")
                 
-    # Botón de vaciado total en el lateral
+    # Lateral
     with st.sidebar:
         if st.button("🚨 VACIAR TODO EL PEDIDO"):
             st.session_state.carrito = []
             st.rerun()
 else:
-    st.error("❌ No se encontró el inventario en GitHub.")
+    st.error("❌ No se encontró el archivo '200_referencias_con_EAN.xlsx'.")
