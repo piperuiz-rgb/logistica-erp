@@ -30,28 +30,31 @@ def vaciar_pedido():
 
 st.title("📦 Sistema de Peticiones Ágil")
 
-# --- SECCIÓN 1: DATOS GENERALES ---
-with st.expander("📝 Datos del Movimiento", expanded=True):
+# --- SECCIÓN 1: DATOS GENERALES (FECHA PRIMERO) ---
+with st.container():
+    # La fecha ocupa todo el ancho arriba para resaltar el día de trabajo
+    fecha_peticion = st.date_input("📅 Fecha de la Petición", datetime.now())
+    
     col1, col2 = st.columns(2)
     with col1:
         ref_peticion = st.text_input("Ref. Petición", placeholder="Ej: REP-001")
         almacenes = ["ALM-CENTRAL", "ALM-NORTE", "ALM-SUR", "ALM-TIENDA"]
         origen = st.selectbox("Origen", almacenes)
     with col2:
-        fecha_peticion = st.date_input("Fecha", datetime.now())
+        # Espacio vacío para alinear visualmente si es necesario
+        st.write("") 
+        st.write("")
         destino = st.selectbox("Destino", almacenes)
 
 # --- VALIDACIÓN DE ALMACENES ---
-error_almacen = origen == destino
-
-if error_almacen:
-    st.error("⚠️ **Error:** El almacén de Origen y Destino no pueden ser iguales. Por favor, selecciona almacenes distintos para continuar.")
-    st.stop() # Detiene la ejecución aquí hasta que cambien la selección
+if origen == destino:
+    st.error("⚠️ **Error:** Origen y Destino son iguales. Selecciona almacenes distintos para habilitar el sistema.")
+    st.stop()
 
 st.divider()
 
 # --- SECCIÓN 2: CARGA Y BÚSQUEDA ---
-tabs = st.tabs(["📊 Carga Masiva", "🔍 Añadir Manual"])
+tabs = st.tabs(["📊 Carga Masiva (Excel)", "🔍 Añadir Manual"])
 
 with tabs[0]:
     archivo_repo = st.file_uploader("Subir Excel de Ventas (EAN, Cantidad)", type=['xlsx'])
@@ -60,18 +63,19 @@ with tabs[0]:
         df_repo.columns = df_repo.columns.str.strip()
         cont = 0
         for _, fila in df_repo.iterrows():
-            match = df_inv[df_inv['EAN'].astype(str) == str(fila['EAN']).strip()]
+            ean_val = str(fila['EAN']).strip()
+            match = df_inv[df_inv['EAN'].astype(str) == ean_val]
             if not match.empty:
                 st.session_state.carrito.append({
                     'EAN': match.iloc[0]['EAN'], 'Origen': origen, 'Destino': destino,
                     'Referencia': match.iloc[0]['Referencia'], 'Unidades': int(fila['Cantidad'])
                 })
                 cont += 1
-        st.success(f"Añadidos {cont} productos.")
+        st.success(f"Añadidos {cont} productos desde el archivo.")
         st.rerun()
 
 with tabs[1]:
-    busqueda = st.text_input("Buscar producto...", placeholder="Escribe referencia o nombre...")
+    busqueda = st.text_input("🔍 Buscar por Ref o Nombre", placeholder="Escribe aquí...")
     if busqueda:
         mask = df_inv.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)
         res = df_inv[mask].head(5)
@@ -91,20 +95,19 @@ with tabs[1]:
 if st.session_state.carrito:
     st.divider()
     col_t, col_v = st.columns([3, 1])
-    col_t.subheader("📋 Revisión de la Petición")
+    col_t.subheader("📋 Revisión Final")
     
-    if col_v.button("🗑️ VACIAR TODO", use_container_width=True):
+    if col_v.button("🗑️ VACIAR", use_container_width=True):
         st.session_state.confirmar_vaciar = True
 
     if st.session_state.get("confirmar_vaciar"):
-        st.warning("⚠️ ¿Estás seguro de que quieres borrar todo el pedido?")
-        if st.button("SÍ, ESTOY SEGURO", type="primary", use_container_width=True):
+        st.warning("⚠️ ¿Borrar todo?")
+        if st.button("SÍ, BORRAR", type="primary", use_container_width=True):
             vaciar_pedido()
             st.rerun()
         if st.button("NO, CANCELAR", use_container_width=True):
             st.session_state.confirmar_vaciar = False
             st.rerun()
-        st.divider()
 
     for i, item in enumerate(st.session_state.carrito):
         cols = st.columns([2, 1, 0.5])
@@ -115,7 +118,7 @@ if st.session_state.carrito:
             st.session_state.carrito.pop(i)
             st.rerun()
 
-    # EXPORTACIÓN
+    # --- EXPORTACIÓN ---
     if os.path.exists('plantilla.xlsx'):
         try:
             wb = load_workbook('plantilla.xlsx')
@@ -129,5 +132,7 @@ if st.session_state.carrito:
             out = io.BytesIO()
             wb.save(out)
             st.divider()
-            st.download_button("📥 DESCARGAR EXCEL", data=out.getvalue(), file_name=f"peticion_{ref_peticion}.xlsx", use_container_width=True, type="primary")
-        except: st.error("Error con plantilla.xlsx")
+            st.download_button("📥 GENERAR EXCEL REPOSICIÓN", data=out.getvalue(), 
+                               file_name=f"pedido_{ref_peticion}_{fecha_peticion}.xlsx", 
+                               use_container_width=True, type="primary")
+        except: st.error("Error al acceder a plantilla.xlsx")
