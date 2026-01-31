@@ -1,83 +1,106 @@
 import streamlit as st
 import pandas as pd
+import os
+import io
+from openpyxl import load_workbook
 
-st.set_page_config(page_title="ERP Logística", layout="wide")
+st.set_page_config(page_title="ERP Logística Pro", layout="wide")
 
-st.title("🚀 Buscador Predictivo de Variantes")
+# --- CARGA AUTOMÁTICA DEL INVENTARIO ---
+@st.cache_data
+def cargar_inventario():
+    fichero = '200_referencias_con_EAN.xlsx'
+    if os.path.exists(fichero):
+        df = pd.read_excel(fichero, engine='openpyxl')
+        df.columns = df.columns.str.strip()
+        return df
+    return None
+
+df_inv = cargar_inventario()
 
 if 'carrito' not in st.session_state:
     st.session_state.carrito = []
 
-# --- PANEL LATERAL ---
+st.title("📦 Sistema de Pedidos Inteligente")
+
+# --- BARRA LATERAL ---
 with st.sidebar:
     st.header("⚙️ Configuración")
-    archivo = st.file_uploader("1. Sube el Catálogo (CSV)", type=['csv'])
+    almacenes = ["ALM-CENTRAL", "ALM-NORTE", "ALM-SUR", "ALM-TIENDA"]
+    origen = st.selectbox("Almacén Origen", almacenes)
+    destino = st.selectbox("Almacén Destino", almacenes)
     
     st.divider()
-    st.subheader("2. Datos del Movimiento")
-    lista_almacenes = ["ALM-CENTRAL", "ALM-NORTE", "ALM-SUR", "ALM-TIENDA"]
-    origen = st.selectbox("Almacén de Origen", options=lista_almacenes)
-    destino = st.selectbox("Almacén de Destino", options=lista_almacenes)
-    
-    st.divider()
-    if st.button("🗑️ Vaciar Carrito"):
+    if st.button("🗑️ Vaciar Pedido Actual"):
         st.session_state.carrito = []
         st.rerun()
 
-# --- BUSCADOR DINÁMICO REAL ---
-if archivo:
-    try:
-        df = pd.read_csv(archivo, sep=None, engine='python')
-        df.columns = df.columns.str.strip()
-        
-        # Caja de texto para búsqueda libre
-        st.subheader("🔍 Buscar Variante")
-        busqueda = st.text_input("Escribe referencia, talla o color...", placeholder="Ej: 100101 o Azul").strip().lower()
+# --- BUSCADOR PREDICTIVO ---
+if df_inv is not None:
+    st.subheader("🔍 Buscador de Productos")
+    busqueda = st.text_input("Escribe Ref, Nombre, Color...", placeholder="Ej: 100101").strip().lower()
 
-        if busqueda:
-            # Filtramos el dataframe en tiempo real según lo que escribes
-            mask = (
-                df['Referencia'].astype(str).str.contains(busqueda, case=False) |
-                df['Nombre'].astype(str).str.contains(busqueda, case=False) |
-                df['Color'].astype(str).str.contains(busqueda, case=False) |
-                df['Talla'].astype(str).str.contains(busqueda, case=False)
-            )
-            resultados = df[mask].head(10) # Limitamos a 10 para no colapsar el móvil
+    if busqueda:
+        # Filtro dinámico en todas las columnas
+        mask = df_inv.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)
+        resultados = df_inv[mask].head(10)
 
-            if not resultados.empty:
-                st.write("### Sugerencias encontradas:")
-                for _, fila in resultados.iterrows():
-                    # Formato de "Tarjeta" para cada resultado
-                    with st.expander(f"📍 {fila['Referencia']} - {fila['Nombre']} ({fila['Talla']}/{fila['Color']})"):
-                        st.write(f"**EAN:** {fila['EAN']}")
-                        col_cant, col_btn = st.columns([1, 1])
-                        with col_cant:
-                            unidades = st.number_input("Unidades", min_value=1, step=1, key=f"u_{fila['EAN']}")
-                        with col_btn:
-                            if st.button("➕ Añadir", key=f"b_{fila['EAN']}", use_container_width=True):
-                                st.session_state.carrito.append({
-                                    'Almacén de Origen': origen,
-                                    'Almacén de Destino': destino,
-                                    'EAN': fila['EAN'],
-                                    'Unidades': unidades
-                                })
-                                st.success(f"EAN {fila['EAN']} añadido")
-            else:
-                st.warning("No hay coincidencias.")
+        for _, fila in resultados.iterrows():
+            with st.expander(f"➕ {fila['Referencia']} - {fila['Nombre']} ({fila['Talla']}/{fila['Color']})"):
+                c1, c2 = st.columns([1, 1])
+                with c1:
+                    cant = st.number_input("Unidades", min_value=1, step=1, key=f"q_{fila['EAN']}")
+                with c2:
+                    if st.button("Añadir", key=f"b_{fila['EAN']}", use_container_width=True):
+                        st.session_state.carrito.append({
+                            'Almacén de Origen': origen,
+                            'Almacén de Destino': destino,
+                            'EAN': fila['EAN'],
+                            'Unidades': cant
+                        })
+                        st.toast(f"EAN {fila['EAN']} añadido al carrito")
+    else:
+        st.info("Escribe en el buscador para filtrar las 200 referencias.")
+
+    # --- GESTIÓN DE LA PLANTILLA Y DESCARGA ---
+    if st.session_state.carrito:
+        st.divider()
+        st.subheader("📋 Resumen del Pedido")
+        df_pedido = pd.DataFrame(st.session_state.carrito)
+        st.dataframe(df_pedido, use_container_width=True)
+
+        # Botón para procesar la plantilla
+        if os.path.exists('plantilla.xlsx'):
+            try:
+                # Cargamos la plantilla
+                wb = load_workbook('plantilla.xlsx')
+                ws = wb.active # Usa la primera hoja disponible
+                
+                # Escribimos los datos (empezando en la fila 2)
+                for i, row in enumerate(st.session_state.carrito):
+                    ws.cell(row=i+2, column=1, value=row['Almacén de Origen'])
+                    ws.cell(row=i+2, column=2, value=row['Almacén de Destino'])
+                    ws.cell(row=i+2, column=3, value=row['EAN'])
+                    ws.cell(row=i+2, column=4, value=row['Unidades'])
+
+                output = io.BytesIO()
+                wb.save(output)
+                
+                st.download_button(
+                    label="📥 DESCARGAR EXCEL (PLANTILLA)",
+                    data=output.getvalue(),
+                    file_name=f"pedido_{origen}_{destino}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            except Exception as e:
+                st.error(f"Error al procesar la plantilla: {e}")
         else:
-            st.info("Escribe algo arriba para ver opciones...")
-
-        # --- EXPORTACIÓN ---
-        if st.session_state.carrito:
-            st.divider()
-            st.subheader("📋 Resumen Pedido")
-            df_res = pd.DataFrame(st.session_state.carrito)
-            st.dataframe(df_res, use_container_width=True)
-            
-            csv_final = df_res.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 DESCARGAR CSV PARA ERP", data=csv_final, file_name=f"pedido_{origen}_{destino}.csv")
-
-    except Exception as e:
-        st.error(f"Error: Revisa que el CSV tenga EAN, Referencia, Nombre, Talla, Color. {e}")
+            # Si no hay plantilla, descarga un Excel normal
+            st.warning("No se detectó 'plantilla.xlsx'. Descargando Excel básico.")
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_pedido.to_excel(writer, index=False)
+            st.download_button("📥 DESCARGAR EXCEL BÁSICO", data=output.getvalue(), file_name="pedido.xlsx")
 else:
-    st.info("👈 Sube el catálogo CSV en el menú lateral.")
+    st.error("No se encontró el archivo '200_referencias_con_EAN.xlsx' en GitHub.")
+    
