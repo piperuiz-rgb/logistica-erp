@@ -27,7 +27,7 @@ st.title("Peticiones entre almacenes Charo Ruiz")
 # --- BARRA LATERAL ---
 with st.sidebar:
     st.header("⚙️ Configuración")
-    almacenes = ["ALM-CENTRAL", "ALM-NORTE", "ALM-SUR", "ALM-TIENDA"]
+    almacenes = ["T001", "T002", "T004", "Almacén Badalona"]
     origen = st.selectbox("Almacén Origen", almacenes)
     destino = st.selectbox("Almacén Destino", almacenes)
     
