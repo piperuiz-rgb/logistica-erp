@@ -7,12 +7,6 @@ from openpyxl import load_workbook
 
 st.set_page_config(page_title="ERP Logística Pro", layout="wide")
 
-# --- CONTROL DE ACCESO (Opcional, descomentar si quieres contraseña) ---
-# if "autenticado" not in st.session_state:
-#     clave = st.text_input("Clave de acceso", type="password")
-#     if clave == "TuClaveAqui": st.session_state.autenticado = True
-#     else: st.stop()
-
 # --- CARGA DEL INVENTARIO ---
 @st.cache_data
 def cargar_inventario():
@@ -28,6 +22,12 @@ df_inv = cargar_inventario()
 if 'carrito' not in st.session_state:
     st.session_state.carrito = []
 
+# --- FUNCIÓN PARA VACIAR ---
+def vaciar_pedido():
+    st.session_state.carrito = []
+    if "confirmar_vaciar" in st.session_state:
+        del st.session_state.confirmar_vaciar
+
 st.title("📦 Sistema de Peticiones Ágil")
 
 # --- SECCIÓN 1: DATOS GENERALES ---
@@ -40,6 +40,13 @@ with st.expander("📝 Datos del Movimiento", expanded=True):
     with col2:
         fecha_peticion = st.date_input("Fecha", datetime.now())
         destino = st.selectbox("Destino", almacenes)
+
+# --- VALIDACIÓN DE ALMACENES ---
+error_almacen = origen == destino
+
+if error_almacen:
+    st.error("⚠️ **Error:** El almacén de Origen y Destino no pueden ser iguales. Por favor, selecciona almacenes distintos para continuar.")
+    st.stop() # Detiene la ejecución aquí hasta que cambien la selección
 
 st.divider()
 
@@ -86,20 +93,18 @@ if st.session_state.carrito:
     col_t, col_v = st.columns([3, 1])
     col_t.subheader("📋 Revisión de la Petición")
     
-    # BOTÓN VACIAR CON CONFIRMACIÓN
-    if col_v.button("🗑️ VACIAR TODO", type="secondary", use_container_width=True):
+    if col_v.button("🗑️ VACIAR TODO", use_container_width=True):
         st.session_state.confirmar_vaciar = True
 
     if st.session_state.get("confirmar_vaciar"):
-        st.warning("⚠️ ¿Seguro que quieres borrar todo el pedido?")
-        c_si, c_no = st.columns(2)
-        if c_si.button("SÍ, BORRAR", type="danger", use_container_width=True):
-            st.session_state.carrito = []
+        st.warning("⚠️ ¿Estás seguro de que quieres borrar todo el pedido?")
+        if st.button("SÍ, ESTOY SEGURO", type="primary", use_container_width=True):
+            vaciar_pedido()
+            st.rerun()
+        if st.button("NO, CANCELAR", use_container_width=True):
             st.session_state.confirmar_vaciar = False
             st.rerun()
-        if c_no.button("NO, CANCELAR", use_container_width=True):
-            st.session_state.confirmar_vaciar = False
-            st.rerun()
+        st.divider()
 
     for i, item in enumerate(st.session_state.carrito):
         cols = st.columns([2, 1, 0.5])
@@ -126,4 +131,3 @@ if st.session_state.carrito:
             st.divider()
             st.download_button("📥 DESCARGAR EXCEL", data=out.getvalue(), file_name=f"peticion_{ref_peticion}.xlsx", use_container_width=True, type="primary")
         except: st.error("Error con plantilla.xlsx")
-
