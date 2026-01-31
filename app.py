@@ -95,7 +95,7 @@ if df_inv is not None:
                 wb.save(output)
                 
                 st.download_button(
-                    label="📥 DESCARGAR EXCEL PARA ERP",
+                    label="📥 DESCARGAR EXCEL PARA Gextia",
                     data=output.getvalue(),
                     file_name=f"pedido_{origen}_{destino}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
