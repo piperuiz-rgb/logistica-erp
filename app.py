@@ -22,7 +22,7 @@ df_inv = cargar_inventario()
 if 'carrito' not in st.session_state:
     st.session_state.carrito = []
 
-st.title("📦 Sistema de Pedidos Inteligente")
+st.title("Peticiones entre almacenes Charo Ruiz")
 
 # --- BARRA LATERAL ---
 with st.sidebar:
