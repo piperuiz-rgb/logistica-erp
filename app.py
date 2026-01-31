@@ -5,10 +5,10 @@ import io
 from datetime import datetime
 from openpyxl import load_workbook
 
-# Configuración con estética limpia
+# Configuración estética
 st.set_page_config(page_title="LogiFlow Pro | Dark & White", layout="wide")
 
-# --- ESTILOS CSS PERSONALIZADOS (Blanco, Negro y Grises) ---
+# --- ESTILOS CSS ---
 st.markdown("""
     <style>
     .stApp { background-color: #fcfcfc; }
@@ -19,15 +19,11 @@ st.markdown("""
         border-radius: 4px;
         padding: 20px;
     }
-    /* Botón Principal (Negro) corregido */
-    .stButton>button[kind="primary"], .stButton>button[data-testid="baseButton-primary"] {
+    /* Botón tipo "Añadido" (Negro) */
+    .stButton>button[kind="primary"] {
         background-color: #000000 !important;
         color: #ffffff !important;
         border: none !important;
-    }
-    /* Botones Secundarios */
-    .stButton>button {
-        border-radius: 4px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -38,7 +34,6 @@ def cargar_inventario():
     if os.path.exists(fichero):
         df = pd.read_excel(fichero, engine='openpyxl')
         df.columns = df.columns.str.strip()
-        # Forzamos EAN a string para evitar problemas de formato
         if 'EAN' in df.columns:
             df['EAN'] = df['EAN'].astype(str).str.strip()
         return df
@@ -53,21 +48,25 @@ def agregar_al_carrito(ean, ref, cant, origen, destino):
     for item in st.session_state.carrito:
         if str(item['EAN']) == str(ean):
             item['Unidades'] += cant
+            st.toast(f"➕ {ref}: Ahora {item['Unidades']} uds.") # Aviso flotante
             return
     st.session_state.carrito.append({'EAN': ean, 'Origen': origen, 'Destino': destino, 'Referencia': ref, 'Unidades': cant})
+    st.toast(f"✅ {ref} añadido al pedido")
 
 # --- INTERFAZ ---
 st.title("📦 LOGIFLOW PRO")
 st.write("---")
 
+# Métricas superiores
 if st.session_state.carrito:
     c1, c2, c3 = st.columns(3)
     c1.metric("UNIDADES TOTALES", sum(item['Unidades'] for item in st.session_state.carrito))
     c2.metric("REFERENCIAS", len(st.session_state.carrito))
-    c3.metric("DESTINO SELECCIONADO", st.session_state.carrito[0]['Destino'])
+    c3.metric("DESTINO", st.session_state.carrito[0]['Destino'])
 
+# Configuración inicial
 with st.container():
-    col_date, col_ref = st.columns([1, 1])
+    col_date, col_ref = st.columns(2)
     fecha_peticion = col_date.date_input("FECHA", datetime.now())
     ref_peticion = col_ref.text_input("REF. PEDIDO", placeholder="EJ: 2024-X")
     
@@ -77,7 +76,7 @@ with st.container():
     destino = col_d.selectbox("DESTINO", almacenes)
 
 if origen == destino:
-    st.warning("⚠️ Selecciona almacenes distintos.")
+    st.error("⚠️ Selecciona almacenes distintos.")
     st.stop()
 
 st.write("###")
@@ -86,7 +85,6 @@ t1, t2 = st.tabs(["📂 CARGA MASIVA", "⌨️ BÚSQUEDA MANUAL"])
 
 with t1:
     archivo = st.file_uploader("Subir Excel de Ventas", type=['xlsx'])
-    # CORRECCIÓN: Usamos type="primary" en lugar de kind="primary"
     if archivo and st.button("PROCESAR EXCEL", use_container_width=True, type="primary"):
         df_repo = pd.read_excel(archivo)
         df_repo.columns = df_repo.columns.str.strip()
@@ -95,7 +93,6 @@ with t1:
             match = df_inv[df_inv['EAN'] == ean_buscado]
             if not match.empty:
                 agregar_al_carrito(match.iloc[0]['EAN'], match.iloc[0]['Referencia'], int(f['Cantidad']), origen, destino)
-        st.success("Carga completada.")
         st.rerun()
 
 with t2:
@@ -103,12 +100,20 @@ with t2:
     if busqueda:
         res = df_inv[df_inv.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)].head(6)
         for _, f in res.iterrows():
-            col_t, col_b = st.columns([4, 1])
+            col_t, col_b = st.columns([4, 1.5])
             col_t.markdown(f"**{f['Referencia']}** \n<small style='color: #666;'>{f['Nombre']}</small>", unsafe_allow_html=True)
-            if col_b.button("AÑADIR", key=f"add_{f['EAN']}", use_container_width=True):
+            
+            # --- LÓGICA DE BOTÓN CON CAMBIO DE COLOR ---
+            ya_esta = any(str(i['EAN']) == str(f['EAN']) for i in st.session_state.carrito)
+            
+            texto_boton = "Añadido (+1)" if ya_esta else "Añadir"
+            tipo_boton = "primary" if ya_esta else "secondary" # primary = negro según nuestro CSS
+            
+            if col_b.button(texto_boton, key=f"add_{f['EAN']}", use_container_width=True, type=tipo_boton):
                 agregar_al_carrito(f['EAN'], f['Referencia'], 1, origen, destino)
                 st.rerun()
 
+# --- REVISIÓN ---
 if st.session_state.carrito:
     st.write("---")
     st.write("### REVISIÓN DE PEDIDO")
@@ -122,6 +127,7 @@ if st.session_state.carrito:
             st.session_state.carrito.pop(i)
             st.rerun()
 
+    # --- ACCIONES FINALES ---
     st.write("###")
     if os.path.exists('plantilla.xlsx'):
         try:
@@ -138,7 +144,6 @@ if st.session_state.carrito:
             if c_v.button("BORRAR TODO", use_container_width=True):
                 st.session_state.carrito = []
                 st.rerun()
-            # CORRECCIÓN: type="primary"
             c_d.download_button("DESCARGAR EXCEL FINAL", data=out.getvalue(), 
                                file_name=f"PEDIDO_{ref_peticion}.xlsx", use_container_width=True, type="primary")
         except: st.error("Error con plantilla.xlsx")
