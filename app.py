@@ -50,7 +50,7 @@ if data_pack:
     st.write("---")
 
     # 2. OPERATIVA
-    t1, t2 = st.tabs(["📂 CARGA MASIVA", "🔍 BUSCADOR MANUAL"])
+    t1, t2 = st.tabs(["📂 CARGAR REPOSICIÓN", "🔍 BUSCADOR MANUAL"])
 
     with t1:
         archivo_v = st.file_uploader("Sube Reposición", type=['xlsx'], key="uploader")
