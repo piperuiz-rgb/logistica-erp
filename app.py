@@ -7,7 +7,7 @@ from openpyxl import load_workbook
 
 st.set_page_config(page_title="Peticiones", layout="wide")
 
-# --- CSS DEFINITIVO: TÍTULO FLUIDO Y ADAPTABILIDAD ---
+# --- CSS DEFINITIVO: TÍTULO Y ESPACIADO ---
 st.markdown("""
     <style>
     /* 1. RESET DE COLOR Y FONDO */
@@ -18,17 +18,20 @@ st.markdown("""
         color: #000000 !important;
     }
 
-    /* 2. AJUSTE TÍTULO "PETICIONES" (Para que no se corte) */
-    h1 {
-        padding-top: 1.5rem !important;
-        padding-bottom: 1rem !important;
-        line-height: 1.2 !important;
-        font-weight: 800 !important;
-        color: #000000 !important;
+    /* 2. ARREGLO DEL TÍTULO: Posicionamiento Real */
+    .peticiones-title {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: #000000;
+        margin-top: 40px; /* Espacio para que no lo tape la barra superior */
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #000000;
+        width: 100%;
     }
 
-    /* 3. TEXTO Y TABLA TÉCNICA */
-    h2, h3, p, span, label, li, .stMarkdown, div {
+    /* 3. TABLA Y TEXTO */
+    h1, h2, h3, p, span, label, li, .stMarkdown, div {
         color: #000000 !important;
     }
     .table-row {
@@ -71,10 +74,9 @@ st.markdown("""
         color: #000000 !important;
     }
 
-    /* 6. MÓVIL (Pantallas < 600px) */
+    /* 6. AJUSTE MÓVIL */
     @media (max-width: 600px) {
-        .block-container { padding: 5px 10px !important; }
-        h1 { font-size: 2rem !important; padding-top: 1rem !important; }
+        .peticiones-title { font-size: 1.8rem; margin-top: 20px; }
         .summary-box { flex-direction: column; gap: 5px; }
         .stButton>button { font-size: 0.75rem !important; height: 48px; }
     }
@@ -92,7 +94,8 @@ if 'carrito' not in st.session_state: st.session_state.carrito = {}
 
 data_pack = get_catalogue()
 
-st.title("Peticiones")
+# --- REEMPLAZO DE st.title POR DIV PERSONALIZADO ---
+st.markdown('<div class="peticiones-title">Peticiones</div>', unsafe_allow_html=True)
 
 if data_pack:
     df_cat, cat_dict = data_pack
@@ -188,4 +191,4 @@ if data_pack:
             st.download_button("CLIC PARA DESCARGAR EXCEL", out.getvalue(), f"REPO_{destino}.xlsx", use_container_width=True)
 else:
     st.error("Archivo catálogo no encontrado.")
-                
+    
