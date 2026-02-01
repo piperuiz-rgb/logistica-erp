@@ -75,7 +75,7 @@ if df_cat is not None:
 
     st.write("---")
 
-    # 2. IMPORTADOR MASIVO (SINCRO CON GEXTIA)
+    # 2. IMPORTADOR MASIVO (AJUSTADO A TUS COLUMNAS)
     st.markdown('<div class="section-header">📂 CARGA DE VENTAS GEXTIA</div>', unsafe_allow_html=True)
     archivo_v = st.file_uploader("Sube el informe de ventas", type=['xlsx'], label_visibility="collapsed")
     
@@ -83,46 +83,56 @@ if df_cat is not None:
         import re
         df_v = pd.read_excel(archivo_v)
         
-        # Normalizamos el catálogo para asegurar el cruce
-        df_cat['Ref_Str'] = df_cat['Referencia'].astype(str).str.strip().str.upper()
-        df_cat['Col_Str'] = df_cat['Color'].astype(str).str.strip().str.upper()
-        df_cat['Tal_Str'] = df_cat['Talla'].astype(str).str.strip().str.upper()
+        # Validamos que las columnas existan
+        if 'EAN' in df_v.columns and 'Cantidad' in df_v.columns:
+            # Normalizamos catálogo para que el cruce sea exacto
+            df_cat['Ref_Str'] = df_cat['Referencia'].astype(str).str.strip().str.upper()
+            df_cat['Col_Str'] = df_cat['Color'].astype(str).str.strip().str.upper()
+            df_cat['Tal_Str'] = df_cat['Talla'].astype(str).str.strip().str.upper()
 
-        for _, f_v in df_v.iterrows():
-            # Buscamos en la columna donde viene la descripción larga
-            texto_sucio = str(f_v.get('Producto', '')) 
-            cant_v = int(f_v.get('Cantidad', 1))
-            
-            # Regex específica para: [REF] Nombre (COLOR, TALLA)
-            match_ref = re.search(r'\[(.*?)\]', texto_sucio)
-            match_specs = re.search(r'\((.*?)\)', texto_sucio)
-            
-            if match_ref and match_specs:
-                ref_v = match_ref.group(1).strip().upper()
-                specs = match_specs.group(1).split(',')
+            exitos = 0
+            for _, f_v in df_v.iterrows():
+                texto_sucio = str(f_v['EAN']) # Aquí viene el texto [249200]...
+                cant_v = int(f_v['Cantidad'])
                 
-                if len(specs) >= 2:
-                    color_v = specs[0].strip().upper()
-                    talla_v = specs[1].strip().upper()
+                # Extraer datos con Regex
+                match_ref = re.search(r'\[(.*?)\]', texto_sucio)
+                match_specs = re.search(r'\((.*?)\)', texto_sucio)
+                
+                if match_ref and match_specs:
+                    ref_v = match_ref.group(1).strip().upper()
+                    specs = match_specs.group(1).split(',')
                     
-                    # Búsqueda exacta por las 3 variables
-                    match = df_cat[
-                        (df_cat['Ref_Str'] == ref_v) & 
-                        (df_cat['Col_Str'] == color_v) & 
-                        (df_cat['Tal_Str'] == talla_v)
-                    ]
-                    
-                    if not match.empty:
-                        prod = match.iloc[0]
-                        ean_real = str(prod['EAN'])
-                        if ean_real in st.session_state.carrito:
-                            st.session_state.carrito[ean_real]['Cantidad'] += cant_v
-                        else:
-                            st.session_state.carrito[ean_real] = {
-                                'Ref': prod['Referencia'], 'Nom': prod.get('Nombre',''), 
-                                'Col': prod.get('Color','-'), 'Tal': prod.get('Talla','-'), 'Cantidad': cant_v
-                            }
-        st.rerun()
+                    if len(specs) >= 2:
+                        color_v = specs[0].strip().upper()
+                        talla_v = specs[1].strip().upper()
+                        
+                        # Buscamos la fila correcta en el catálogo
+                        match = df_cat[
+                            (df_cat['Ref_Str'] == ref_v) & 
+                            (df_cat['Col_Str'] == color_v) & 
+                            (df_cat['Tal_Str'] == talla_v)
+                        ]
+                        
+                        if not match.empty:
+                            prod = match.iloc[0]
+                            # Usamos el EAN auténtico del catálogo para el carrito
+                            ean_final = str(prod['EAN'])
+                            if ean_final in st.session_state.carrito:
+                                st.session_state.carrito[ean_final]['Cantidad'] += cant_v
+                            else:
+                                st.session_state.carrito[ean_final] = {
+                                    'Ref': prod['Referencia'], 
+                                    'Nom': prod.get('Nombre',''), 
+                                    'Col': prod.get('Color','-'), 
+                                    'Tal': prod.get('Talla','-'), 
+                                    'Cantidad': cant_v
+                                }
+                            exitos += 1
+            st.success(f"Se han procesado {exitos} variantes correctamente.")
+            st.rerun()
+        else:
+            st.error("Error: El Excel debe tener las columnas 'EAN' y 'Cantidad'.")
 
     # 3. BUSCADOR Y FILTROS
     st.markdown('<div class="section-header">🔍 BUSCADOR MANUAL</div>', unsafe_allow_html=True)
