@@ -4,126 +4,128 @@ import os
 from io import BytesIO
 
 # 1. CONFIGURACIÓN
-st.set_page_config(page_title="Reposición RGB", layout="wide")
+st.set_page_config(page_title="RGB Logística", layout="wide")
 
-# 2. CARGA DEL CATÁLOGO (Versión simplificada)
+# 2. CARGA DEL CATÁLOGO
 @st.cache_data
 def load_data():
     archivo = "catalogue.xlsx"
     if os.path.exists(archivo):
         df = pd.read_excel(archivo, engine='openpyxl')
-        # Limpieza de columnas: pasamos a string y quitamos espacios
         df.columns = [str(c).strip() for c in df.columns]
-        # Aseguramos que el EAN sea tratado como texto para que el cruce sea exacto
+        # Forzamos EAN a texto para evitar errores de formato
         if 'EAN' in df.columns:
-            df['EAN'] = df['EAN'].astype(str).str.strip()
+            df['EAN'] = df['EAN'].astype(str).str.replace('.0', '', regex=False).str.strip()
         return df
     else:
-        st.error(f"No se encuentra el archivo '{archivo}' en GitHub.")
+        st.error("⚠️ Archivo 'catalogue.xlsx' no encontrado en GitHub.")
         st.stop()
 
 df_cat = load_data()
 
-# 3. ESTADO DE LA APP
+# 3. ESTADO DEL CARRITO
 if 'carrito' not in st.session_state:
     st.session_state.carrito = {}
 
-st.title("📦 Gestión de Reposición Directa")
+# --- INTERFAZ ---
+st.title("📦 Gestión de Reposición RGB")
 
 col1, col2 = st.columns([1, 1.2])
 
+# --- COLUMNA IZQUIERDA: IMPORTADOR Y BUSCADOR ---
 with col1:
-    st.subheader("📂 Importador de Ventas")
-    archivo_v = st.file_uploader("Sube el Excel (Columnas: EAN, Cantidad)", type=['xlsx'])
-    
-    if archivo_v:
-        if st.button("CARGAR EN LISTA", type="primary"):
+    with st.expander("📂 IMPORTAR EXCEL DE VENTAS", expanded=True):
+        archivo_v = st.file_uploader("Subir Excel (EAN y Cantidad)", type=['xlsx'])
+        if archivo_v and st.button("PROCESAR ARCHIVO", type="primary"):
             df_v = pd.read_excel(archivo_v)
             df_v.columns = [str(c).strip() for c in df_v.columns]
             
             if 'EAN' in df_v.columns and 'Cantidad' in df_v.columns:
-                # Convertimos EAN de ventas a string para comparar
-                df_v['EAN'] = df_v['EAN'].astype(str).str.strip()
-                
-                encontrados = 0
-                no_encontrados = 0
-
+                df_v['EAN'] = df_v['EAN'].astype(str).str.replace('.0', '', regex=False).str.strip()
+                exitos = 0
                 for _, fila in df_v.iterrows():
-                    ean_venta = fila['EAN']
-                    cant_venta = int(fila['Cantidad'])
+                    ean_v = fila['EAN']
+                    cant_v = int(fila['Cantidad'])
                     
-                    # BUSQUEDA DIRECTA POR EAN
-                    match = df_cat[df_cat['EAN'] == ean_venta]
-                    
+                    match = df_cat[df_cat['EAN'] == ean_v]
                     if not match.empty:
-                        prod = match.iloc[0]
-                        if ean_venta in st.session_state.carrito:
-                            st.session_state.carrito[ean_venta]['Cantidad'] += cant_venta
+                        p = match.iloc[0]
+                        if ean_v in st.session_state.carrito:
+                            st.session_state.carrito[ean_v]['Cantidad'] += cant_v
                         else:
-                            st.session_state.carrito[ean_venta] = {
-                                'Ref': prod.get('Referencia', 'S/R'),
-                                'Nom': prod.get('Nombre', 'Producto'),
-                                'Col': prod.get('Color', '-'),
-                                'Tal': prod.get('Talla', '-'),
-                                'Cantidad': cant_venta
+                            st.session_state.carrito[ean_v] = {
+                                'Ref': p['Referencia'], 'Col': p.get('Color','-'),
+                                'Tal': p.get('Talla','-'), 'Cantidad': cant_v
                             }
-                        encontrados += 1
-                    else:
-                        no_encontrados += 1
-                
-                st.success(f"✅ {encontrados} productos añadidos.")
-                if no_encontrados > 0:
-                    st.warning(f"⚠️ {no_encontrados} EANs no se encontraron en el catálogo.")
+                        exitos += 1
+                st.success(f"✅ Añadidos {exitos} productos.")
                 st.rerun()
-            else:
-                st.error("El Excel debe tener columnas llamadas 'EAN' y 'Cantidad'")
 
     st.divider()
-    st.subheader("🔍 Buscador Manual")
-    busqueda = st.text_input("Escribe EAN o Referencia")
+    
+    st.subheader("🔍 Añadir Manualmente")
+    busqueda = st.text_input("Buscar por Referencia o EAN")
     if busqueda:
-        # Busca por EAN o por Referencia
-        res = df_cat[(df_cat['EAN'] == busqueda) | (df_cat['Referencia'].astype(str) == busqueda)]
+        res = df_cat[(df_cat['EAN'] == busqueda) | (df_cat['Referencia'].astype(str).str.contains(busqueda, case=False))]
         if not res.empty:
             for _, r in res.iterrows():
-                if st.button(f"Añadir: {r['Referencia']} - {r['Color']} ({r['Talla']})"):
-                    cod = str(r['EAN'])
-                    if cod in st.session_state.carrito:
-                        st.session_state.carrito[cod]['Cantidad'] += 1
-                    else:
-                        st.session_state.carrito[cod] = {
-                            'Ref': r['Referencia'], 'Nom': r.get('Nombre','-'), 
-                            'Col': r['Color'], 'Tal': r['Talla'], 'Cantidad': 1
-                        }
-                    st.success("Añadido")
-                    st.rerun()
+                with st.container(border=True):
+                    c_a, c_b, c_c = st.columns([2, 1, 1])
+                    c_a.write(f"**{r['Referencia']}** - {r['Color']} ({r['Talla']})")
+                    cant_sel = c_b.number_input("Cant.", min_value=1, value=1, key=f"n_{r['EAN']}")
+                    if c_c.button("Añadir", key=f"btn_{r['EAN']}"):
+                        cod = str(r['EAN'])
+                        if cod in st.session_state.carrito:
+                            st.session_state.carrito[cod]['Cantidad'] += cant_sel
+                        else:
+                            st.session_state.carrito[cod] = {
+                                'Ref': r['Referencia'], 'Col': r['Color'], 
+                                'Tal': r['Talla'], 'Cantidad': cant_sel
+                            }
+                        st.rerun()
 
+# --- COLUMNA DERECHA: CARRITO EDITABLE ---
 with col2:
     st.subheader("🛒 Lista de Reposición")
-    if st.session_state.carrito:
-        # Crear tabla para visualizar
-        lista_final = []
-        for k, v in st.session_state.carrito.items():
-            lista_final.append({
-                "EAN": k, "Referencia": v['Ref'], "Color": v['Col'], "Talla": v['Tal'], "Cantidad": v['Cantidad']
-            })
-        
-        df_lista = pd.DataFrame(lista_final)
-        st.dataframe(df_lista, use_container_width=True, hide_index=True)
+    if not st.session_state.carrito:
+        st.info("Lista vacía.")
+    else:
+        # Generamos una tabla con botones para editar o eliminar
+        for ean, datos in list(st.session_state.carrito.items()):
+            with st.container(border=True):
+                ca, cb, cc, cd = st.columns([2, 1, 1, 0.5])
+                ca.write(f"**{datos['Ref']}**\n{datos['Col']} / {datos['Tal']}")
+                
+                # Modificar cantidad directamente
+                nueva_cant = cb.number_input("Cant.", min_value=1, value=datos['Cantidad'], key=f"edit_{ean}")
+                st.session_state.carrito[ean]['Cantidad'] = nueva_cant
+                
+                if cd.button("❌", key=f"del_{ean}"):
+                    del st.session_state.carrito[ean]
+                    st.rerun()
 
-        if st.button("🗑️ Vaciar Lista", type="primary"):
-            st.session_state.carrito = {}
-            st.rerun()
-
-        # Botón para descargar lo acumulado
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_lista[["EAN", "Cantidad"]].to_excel(writer, index=False)
+        st.divider()
+        col_btn1, col_btn2 = st.columns(2)
         
-        st.download_button(
-            label="📥 Descargar Excel para Gextia",
-            data=output.getvalue(),
-            file_name="reposicion_gextia.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        with col_btn1:
+            if st.button("🗑️ VACIAR TODO", type="primary"):
+                st.session_state.carrito = {}
+                st.rerun()
         
+        with col_btn2:
+            # Exportación
+            final_df = pd.DataFrame([
+                {'EAN': k, 'Cantidad': v['Cantidad']} 
+                for k, v in st.session_state.carrito.items()
+            ])
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                final_df.to_excel(writer, index=False)
+            
+            st.download_button(
+                label="📥 DESCARGAR EXCEL",
+                data=output.getvalue(),
+                file_name="reposicion_gextia.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            
