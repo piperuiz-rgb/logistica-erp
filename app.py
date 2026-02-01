@@ -160,4 +160,27 @@ if data_pack:
 
         # --- RESUMEN DE TOTALES (AL FINAL) ---
         total_uds = sum(it['Cantidad'] for it in st.session_state.carrito.values())
-        total_refs = len(st.session_state.
+        total_refs = len(st.session_state.carrito)
+        
+        st.markdown(f"""
+        <div class="summary-box">
+            <div>PIEZAS TOTALES: {total_uds}</div>
+            <div>MODELOS: {total_refs}</div>
+            <div>DESTINO: {destino}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        cv, cg = st.columns([1, 2])
+        if cv.button("LIMPIAR"):
+            st.session_state.carrito = {}; st.rerun()
+            
+        if os.path.exists('peticion.xlsx') and cg.button("GENERAR Y DESCARGAR", type="primary"):
+            wb = load_workbook('peticion.xlsx')
+            ws = wb.active
+            for ean, it in st.session_state.carrito.items():
+                ws.append([fecha_str, origen, destino, ref_peticion, ean, it['Cantidad']])
+            out = io.BytesIO(); wb.save(out)
+            st.download_button("CLIC AQUÍ PARA GUARDAR EXCEL", out.getvalue(), f"REPO_{destino}.xlsx", use_container_width=True)
+else:
+    st.error("Archivo catálogo no encontrado.")
+    
