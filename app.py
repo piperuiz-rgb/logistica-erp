@@ -7,7 +7,7 @@ from openpyxl import load_workbook
 
 st.set_page_config(page_title="Peticiones", layout="wide")
 
-# --- CSS TÉCNICO DEFINITIVO Y LIMPIO ---
+# --- CSS HÍBRIDO: FUERZA BLANCO EN PC Y ADAPTABILIDAD EN MÓVIL ---
 st.markdown("""
     <style>
     /* 1. RESET DE COLOR Y FONDO (Nuclear White) */
@@ -18,21 +18,7 @@ st.markdown("""
         color: #000000 !important;
     }
 
-    /* 2. LIMPIEZA TOTAL DE SELECTORES (Sin barras ni sombras) */
-    div[data-testid="stSelectbox"] > div {
-        background-color: #ffffff !important;
-        border: none !important;
-    }
-    div[data-baseweb="select"] {
-        border: 1px solid #000000 !important;
-        border-radius: 0px !important;
-    }
-    div[data-baseweb="select"] > div {
-        background-color: #ffffff !important;
-        border: none !important;
-    }
-
-    /* 3. TEXTO Y TABLA */
+    /* 2. TEXTO Y TABLA */
     h1, h2, h3, p, span, label, li, .stMarkdown, div {
         color: #000000 !important;
     }
@@ -51,21 +37,21 @@ st.markdown("""
         justify-content: center;
     }
 
-    /* 4. BOTONES (Texto pequeño para evitar cortes) */
+    /* 3. BOTONES (Adaptables) */
     .stButton>button {
         width: 100% !important;
         border-radius: 0px !important;
         font-weight: 700 !important;
-        height: 38px;
+        height: 42px;
         text-transform: uppercase;
         border: 1px solid #000000 !important;
-        font-size: 0.65rem !important;
+        font-size: 0.7rem !important;
         padding: 0px 2px !important;
     }
     .stButton>button[kind="secondary"] { background-color: #ffffff !important; color: #000000 !important; }
     .stButton>button[kind="primary"] { background-color: #0052FF !important; color: #ffffff !important; border: none !important; }
 
-    /* 5. RESUMEN FINAL */
+    /* 4. RESUMEN FINAL */
     .summary-box {
         border: 2px solid #000000;
         padding: 15px;
@@ -75,6 +61,15 @@ st.markdown("""
         display: flex;
         justify-content: space-between;
         color: #000000 !important;
+    }
+
+    /* 5. AJUSTES ESPECÍFICOS PARA MÓVIL (Pantallas < 600px) */
+    @media (max-width: 600px) {
+        .block-container { padding: 10px !important; }
+        .summary-box { flex-direction: column; gap: 5px; }
+        .stButton>button { font-size: 0.8rem !important; height: 50px; } /* Botón más grande para dedos */
+        .cell-content { padding: 5px; }
+        h1 { font-size: 1.5rem !important; }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -96,7 +91,7 @@ if data_pack:
     df_cat, cat_dict = data_pack
 
     # CONFIGURACIÓN
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3 = st.columns([1, 1, 1])
     fecha_str = c1.date_input("FECHA", datetime.now()).strftime('%Y-%m-%d')
     origen = c2.selectbox("ORIGEN", ["PET Almacén Badalona", "ALM-CENTRAL"])
     destino = c3.selectbox("DESTINO", ["PET T002 Marbella", "ALM-TIENDA"])
@@ -108,7 +103,7 @@ if data_pack:
     st.write("---")
 
     # OPERATIVA
-    t1, t2 = st.tabs(["📂 CARGA EXCEL", "🔍 BUSCADOR MANUAL"])
+    t1, t2 = st.tabs(["📂 CARGA EXCEL", "🔍 BUSCADOR"])
 
     with t1:
         archivo_v = st.file_uploader("Subir ventas", type=['xlsx'])
@@ -124,7 +119,7 @@ if data_pack:
             st.rerun()
 
     with t2:
-        busq = st.text_input("Filtrar por Referencia, Nombre o Color...", key="search_main")
+        busq = st.text_input("Filtrar catálogo...", key="search_main")
         if busq:
             mask = df_cat.apply(lambda row: busq.lower() in str(row.values).lower(), axis=1)
             res = df_cat[mask].head(30)
@@ -135,7 +130,7 @@ if data_pack:
                 ean = f['EAN']
                 en_car = ean in st.session_state.carrito
                 st.markdown('<div class="table-row">', unsafe_allow_html=True)
-                c1, c2 = st.columns([4, 1.2])
+                c1, c2 = st.columns([3, 1.5]) # Ajuste de proporción para móvil
                 with c1:
                     st.markdown(f"""<div class='cell-content'>
                         <span style='font-weight: 800;'>{f['Referencia']}</span>
@@ -143,7 +138,7 @@ if data_pack:
                         <span style='font-size: 0.7rem;'>{f.get('Color','-')} / {f.get('Talla','-')}</span>
                     </div>""", unsafe_allow_html=True)
                 with c2:
-                    label = f"OK ({st.session_state.carrito[ean]['Cantidad']})" if en_car else "AÑADIR"
+                    label = f"OK({st.session_state.carrito[ean]['Cantidad']})" if en_car else "AÑADIR"
                     if st.button(label, key=f"b_{ean}", type="primary" if en_car else "secondary"):
                         if en_car: st.session_state.carrito[ean]['Cantidad'] += 1
                         else: st.session_state.carrito[ean] = {'Ref': f['Referencia'], 'Nom': f.get('Nombre',''), 'Col': f.get('Color','-'), 'Tal': f.get('Talla','-'), 'Cantidad': 1}
@@ -157,7 +152,7 @@ if data_pack:
         
         for ean, item in list(st.session_state.carrito.items()):
             st.markdown('<div class="table-row">', unsafe_allow_html=True)
-            ca, cb, cc = st.columns([3, 1, 0.5])
+            ca, cb, cc = st.columns([2.5, 1.2, 0.8])
             with ca:
                 st.markdown(f"<div class='cell-content'><strong>{item['Ref']}</strong><br><small>{item['Nom']} ({item['Col']}/{item['Tal']})</small></div>", unsafe_allow_html=True)
             with cb:
@@ -183,7 +178,7 @@ if data_pack:
             for ean, it in st.session_state.carrito.items():
                 ws.append([fecha_str, origen, destino, ref_peticion, ean, it['Cantidad']])
             out = io.BytesIO(); wb.save(out)
-            st.download_button("CLIC PARA DESCARGAR EXCEL", out.getvalue(), f"REPO_{destino}.xlsx", use_container_width=True)
+            st.download_button("CLIC PARA GUARDAR EXCEL", out.getvalue(), f"REPO_{destino}.xlsx", use_container_width=True)
 else:
     st.error("Archivo catálogo no encontrado.")
     
