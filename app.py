@@ -2,12 +2,13 @@ import streamlit as st
 import pandas as pd
 import os
 import io
+import re
 from datetime import datetime
 from openpyxl import load_workbook
 
-st.set_page_config(page_title="Peticiones", layout="wide")
+# --- CONFIGURACIÓN Y ESTILOS ---
+st.set_page_config(page_title="Peticiones RGB", layout="wide")
 
-# --- DISEÑO TÉCNICO FINAL (PC + MÓVIL) ---
 st.markdown("""
     <style>
     html, body, .stApp, .main, .block-container, 
@@ -54,7 +55,12 @@ def get_catalogue():
     if not os.path.exists('catalogue.xlsx'): return None
     try:
         df = pd.read_excel('catalogue.xlsx', engine='openpyxl')
+        df.columns = [str(c).strip() for c in df.columns]
         df['EAN'] = df['EAN'].astype(str).str.replace('.0', '', regex=False).str.strip()
+        # Generar KEY para el conversor
+        df['KEY_MASTER'] = (df['Referencia'].astype(str).str.strip().str.upper() + "_" + 
+                            df['Color'].astype(str).str.strip().str.upper() + "_" + 
+                            df['Talla'].astype(str).str.strip().str.upper())
         return df
     except: return None
 
@@ -63,105 +69,149 @@ if 'carrito' not in st.session_state: st.session_state.carrito = {}
 if 'search_key' not in st.session_state: st.session_state.search_key = 0
 
 df_cat = get_catalogue()
-st.markdown('<div class="peticiones-title">Peticiones</div>', unsafe_allow_html=True)
 
-if df_cat is not None:
-    # 1. CABECERA LOGÍSTICA
-    c1, c2, c3 = st.columns(3)
-    fecha_str = c1.date_input("FECHA", datetime.now()).strftime('%Y-%m-%d')
-    origen = c2.selectbox("ORIGEN", ["PET Almacén Badalona", "ALM-CENTRAL"])
-    destino = c3.selectbox("DESTINO", ["PET T002 Marbella", "ALM-TIENDA"])
-    ref_peticion = st.text_input("REFERENCIA PETICIÓN")
+# --- PESTAÑAS ---
+tab1, tab2 = st.tabs(["🛒 GESTIÓN DE PETICIONES", "🔄 CONVERSOR GEXTIA"])
 
-    st.write("---")
+# ==========================================
+# PESTAÑA 1: PETICIONES
+# ==========================================
+with tab1:
+    st.markdown('<div class="peticiones-title">Peticiones</div>', unsafe_allow_html=True)
+    if df_cat is not None:
+        c1, c2, c3 = st.columns(3)
+        fecha_str = c1.date_input("FECHA", datetime.now()).strftime('%Y-%m-%d')
+        origen = c2.selectbox("ORIGEN", ["PET Almacén Badalona", "ALM-CENTRAL"])
+        destino = c3.selectbox("DESTINO", ["PET T002 Marbella", "ALM-TIENDA"])
+        ref_peticion = st.text_input("REFERENCIA PETICIÓN")
 
-    # 2. IMPORTADOR MASIVO
-    st.markdown('<div class="section-header">📂 IMPORTACIÓN DE VENTAS / REPOSICIÓN</div>', unsafe_allow_html=True)
-    archivo_v = st.file_uploader("Sube el Excel con columnas EAN y Cantidad", type=['xlsx'], label_visibility="collapsed")
-    if archivo_v and st.button("CARGAR DATOS DEL EXCEL", type="primary"):
-        df_v = pd.read_excel(archivo_v)
-        for _, f_v in df_v.iterrows():
-            ean_v = str(f_v['EAN']).replace('.0', '').strip()
-            cant_v = int(f_v.get('Cantidad', 1))
-            match = df_cat[df_cat['EAN'] == ean_v]
-            if not match.empty:
-                prod = match.iloc[0]
-                if ean_v in st.session_state.carrito: st.session_state.carrito[ean_v]['Cantidad'] += cant_v
-                else: st.session_state.carrito[ean_v] = {
-                    'Ref': prod['Referencia'], 'Nom': prod.get('Nombre',''), 
-                    'Col': prod.get('Color','-'), 'Tal': prod.get('Talla','-'), 'Cantidad': cant_v
-                }
-        st.rerun()
-
-    # 3. BUSCADOR Y FILTROS
-    st.markdown('<div class="section-header">🔍 BUSCADOR MANUAL</div>', unsafe_allow_html=True)
-    f1, f2 = st.columns([2, 1])
-    busq_txt = f1.text_input("Buscar referencia, nombre o EAN...", key=f"busq_{st.session_state.search_key}")
-    limite = f2.selectbox("Ver resultados:", [10, 25, 50, 100, 500], index=1, key=f"lim_{st.session_state.search_key}")
-
-    filtros_activos = {}
-    columnas_posibles = ["Colección", "Categoría", "Familia"]
-    columnas_reales = [c for c in columnas_posibles if c in df_cat.columns]
-    
-    if columnas_reales:
-        cols_f = st.columns(len(columnas_reales))
-        for i, col in enumerate(columnas_reales):
-            opciones = ["TODOS"] + sorted(df_cat[col].dropna().unique().tolist())
-            filtros_activos[col] = cols_f[i].selectbox(f"{col}", opciones, key=f"f_{col}_{st.session_state.search_key}")
-
-    df_res = df_cat.copy()
-    if busq_txt:
-        df_res = df_res[df_res.apply(lambda row: busq_txt.lower() in str(row.values).lower(), axis=1)]
-    for col, val in filtros_activos.items():
-        if val != "TODOS":
-            df_res = df_res[df_res[col] == val]
-
-    if busq_txt or any(v != "TODOS" for v in filtros_activos.values()):
-        st.markdown(f"<div style='background: #000; color: #fff; padding: 4px; font-size: 0.7rem; text-align: center;'>{len(df_res)} COINCIDENCIAS</div>", unsafe_allow_html=True)
-        for _, f in df_res.head(limite).iterrows():
-            ean = f['EAN']
-            en_car = ean in st.session_state.carrito
-            st.markdown('<div class="table-row">', unsafe_allow_html=True)
-            c1, c2 = st.columns([3, 1.5]) 
-            with c1:
-                st.markdown(f"<div class='cell-content'><strong>{f['Referencia']}</strong><br><small>{f.get('Nombre','')} ({f.get('Color','-')} / {f.get('Talla','-')})</small></div>", unsafe_allow_html=True)
-            with c2:
-                label = f"OK ({st.session_state.carrito[ean]['Cantidad']})" if en_car else "AÑADIR"
-                if st.button(label, key=f"b_{ean}", type="primary" if en_car else "secondary"):
-                    if en_car: st.session_state.carrito[ean]['Cantidad'] += 1
-                    else: st.session_state.carrito[ean] = {'Ref': f['Referencia'], 'Nom': f.get('Nombre',''), 'Col': f.get('Color','-'), 'Tal': f.get('Talla','-'), 'Cantidad': 1}
-                    st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-
-    # 4. LISTA FINAL Y GENERACIÓN
-    if st.session_state.carrito:
         st.write("---")
-        st.markdown('<div class="section-header">📋 LISTA DE REPOSICIÓN</div>', unsafe_allow_html=True)
-        for ean, item in list(st.session_state.carrito.items()):
-            st.markdown('<div class="table-row">', unsafe_allow_html=True)
-            ca, cb, cc = st.columns([2.5, 1.2, 0.8])
-            with ca: st.markdown(f"<div class='cell-content'><strong>{item['Ref']}</strong><br><small>{item['Nom']}</small></div>", unsafe_allow_html=True)
-            with cb: item['Cantidad'] = st.number_input("C", 1, 9999, item['Cantidad'], key=f"q_{ean}", label_visibility="collapsed")
-            with cc:
-                if st.button("✕", key=f"d_{ean}"): del st.session_state.carrito[ean]; st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
 
-        uds = sum(it['Cantidad'] for it in st.session_state.carrito.values())
-        st.markdown(f'<div class="summary-box"><div>PIEZAS: {uds}</div><div>MODELOS: {len(st.session_state.carrito)}</div><div>DESTINO: {destino}</div></div>', unsafe_allow_html=True)
-
-        cv, cg = st.columns([1, 2])
-        if cv.button("LIMPIAR TODO"):
-            st.session_state.carrito = {}
-            st.session_state.search_key += 1
+        st.markdown('<div class="section-header">📂 IMPORTACIÓN DE VENTAS / REPOSICIÓN</div>', unsafe_allow_html=True)
+        archivo_v = st.file_uploader("Sube el Excel con columnas EAN y Cantidad", type=['xlsx'], label_visibility="collapsed", key="u_peticiones")
+        if archivo_v and st.button("CARGAR DATOS DEL EXCEL", type="primary", key="btn_peticiones"):
+            df_v = pd.read_excel(archivo_v)
+            for _, f_v in df_v.iterrows():
+                ean_v = str(f_v['EAN']).replace('.0', '').strip()
+                cant_v = int(f_v.get('Cantidad', 1))
+                match = df_cat[df_cat['EAN'] == ean_v]
+                if not match.empty:
+                    prod = match.iloc[0]
+                    if ean_v in st.session_state.carrito: st.session_state.carrito[ean_v]['Cantidad'] += cant_v
+                    else: st.session_state.carrito[ean_v] = {
+                        'Ref': prod['Referencia'], 'Nom': prod.get('Nombre',''), 
+                        'Col': prod.get('Color','-'), 'Tal': prod.get('Talla','-'), 'Cantidad': cant_v
+                    }
             st.rerun()
-            
-        if os.path.exists('peticion.xlsx') and cg.button("GENERAR Y DESCARGAR EXCEL", type="primary"):
-            wb = load_workbook('peticion.xlsx')
-            ws = wb.active
-            for ean, it in st.session_state.carrito.items():
-                ws.append([fecha_str, origen, destino, ref_peticion, ean, it['Cantidad']])
-            out = io.BytesIO(); wb.save(out)
-            st.download_button("📥 GUARDAR ARCHIVO REPO", out.getvalue(), f"REPO_{destino}.xlsx", use_container_width=True)
-else:
-    st.error("Error: Asegúrate de tener el archivo 'catalogue.xlsx' en la carpeta.")
+
+        st.markdown('<div class="section-header">🔍 BUSCADOR MANUAL</div>', unsafe_allow_html=True)
+        f1, f2 = st.columns([2, 1])
+        busq_txt = f1.text_input("Buscar referencia, nombre o EAN...", key=f"busq_{st.session_state.search_key}")
+        limite = f2.selectbox("Ver resultados:", [10, 25, 50, 100, 500], index=1, key=f"lim_{st.session_state.search_key}")
+
+        filtros_activos = {}
+        columnas_posibles = ["Colección", "Categoría", "Familia"]
+        columnas_reales = [c for c in columnas_posibles if c in df_cat.columns]
+        
+        if columnas_reales:
+            cols_f = st.columns(len(columnas_reales))
+            for i, col in enumerate(columnas_reales):
+                opciones = ["TODOS"] + sorted(df_cat[col].dropna().unique().tolist())
+                filtros_activos[col] = cols_f[i].selectbox(f"{col}", opciones, key=f"f_{col}_{st.session_state.search_key}")
+
+        df_res = df_cat.copy()
+        if busq_txt:
+            df_res = df_res[df_res.apply(lambda row: busq_txt.lower() in str(row.values).lower(), axis=1)]
+        for col, val in filtros_activos.items():
+            if val != "TODOS":
+                df_res = df_res[df_res[col] == val]
+
+        if busq_txt or any(v != "TODOS" for v in filtros_activos.values()):
+            st.markdown(f"<div style='background: #000; color: #fff; padding: 4px; font-size: 0.7rem; text-align: center;'>{len(df_res)} COINCIDENCIAS</div>", unsafe_allow_html=True)
+            for _, f in df_res.head(limite).iterrows():
+                ean = f['EAN']
+                en_car = ean in st.session_state.carrito
+                st.markdown('<div class="table-row">', unsafe_allow_html=True)
+                c1, c2 = st.columns([3, 1.5]) 
+                with c1:
+                    st.markdown(f"<div class='cell-content'><strong>{f['Referencia']}</strong><br><small>{f.get('Nombre','')} ({f.get('Color','-')} / {f.get('Talla','-')})</small></div>", unsafe_allow_html=True)
+                with c2:
+                    label = f"OK ({st.session_state.carrito[ean]['Cantidad']})" if en_car else "AÑADIR"
+                    if st.button(label, key=f"b_{ean}", type="primary" if en_car else "secondary"):
+                        if en_car: st.session_state.carrito[ean]['Cantidad'] += 1
+                        else: st.session_state.carrito[ean] = {'Ref': f['Referencia'], 'Nom': f.get('Nombre',''), 'Col': f.get('Color','-'), 'Tal': f.get('Talla','-'), 'Cantidad': 1}
+                        st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+
+        if st.session_state.carrito:
+            st.write("---")
+            st.markdown('<div class="section-header">📋 LISTA DE REPOSICIÓN</div>', unsafe_allow_html=True)
+            for ean, item in list(st.session_state.carrito.items()):
+                st.markdown('<div class="table-row">', unsafe_allow_html=True)
+                ca, cb, cc = st.columns([2.5, 1.2, 0.8])
+                with ca: st.markdown(f"<div class='cell-content'><strong>{item['Ref']}</strong><br><small>{item['Nom']}</small></div>", unsafe_allow_html=True)
+                with cb: item['Cantidad'] = st.number_input("C", 1, 9999, item['Cantidad'], key=f"q_{ean}", label_visibility="collapsed")
+                with cc:
+                    if st.button("✕", key=f"d_{ean}"): del st.session_state.carrito[ean]; st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            uds = sum(it['Cantidad'] for it in st.session_state.carrito.values())
+            st.markdown(f'<div class="summary-box"><div>PIEZAS: {uds}</div><div>MODELOS: {len(st.session_state.carrito)}</div><div>DESTINO: {destino}</div></div>', unsafe_allow_html=True)
+
+            cv, cg = st.columns([1, 2])
+            if cv.button("LIMPIAR TODO"):
+                st.session_state.carrito = {}
+                st.session_state.search_key += 1
+                st.rerun()
+                
+            if os.path.exists('peticion.xlsx') and cg.button("GENERAR Y DESCARGAR EXCEL", type="primary", key="btn_final"):
+                wb = load_workbook('peticion.xlsx')
+                ws = wb.active
+                for ean, it in st.session_state.carrito.items():
+                    ws.append([fecha_str, origen, destino, ref_peticion, ean, it['Cantidad']])
+                out = io.BytesIO(); wb.save(out)
+                st.download_button("📥 GUARDAR ARCHIVO REPO", out.getvalue(), f"REPO_{destino}.xlsx", use_container_width=True)
+    else:
+        st.error("Error: catalogue.xlsx no encontrado.")
+
+# ==========================================
+# PESTAÑA 2: CONVERSOR GEXTIA
+# ==========================================
+with tab2:
+    st.markdown('<div class="peticiones-title">Conversor Gextia</div>', unsafe_allow_html=True)
+    st.info("Sube el Excel con el formato de texto largo para convertirlo en una lista de EAN limpia.")
     
+    archivo_conv = st.file_uploader("Sube el Excel sucio", type=['xlsx'], key="u_conversor")
+    
+    if archivo_conv and df_cat is not None:
+        df_v_sucio = pd.read_excel(archivo_conv)
+        col_sucio = df_v_sucio.columns[0]
+        col_cant = df_v_sucio.columns[1]
+
+        if st.button("LIMPIAR Y CONVERTIR", type="primary", key="btn_conv_exec"):
+            def extraer_llave(t):
+                t = str(t)
+                ref = re.search(r'\[(.*?)\]', t)
+                specs = re.findall(r'\((.*?)\)', t)
+                if ref and specs:
+                    r = ref.group(1).strip().upper()
+                    p = specs[-1].split(',')
+                    if len(p) >= 2:
+                        return f"{r}_{p[0].strip().upper()}_{p[1].strip().upper()}"
+                return None
+
+            df_v_sucio['LLAVE'] = df_v_sucio[col_sucio].apply(extraer_llave)
+            res = pd.merge(df_v_sucio, df_cat[['KEY_MASTER', 'EAN']], left_on='LLAVE', right_on='KEY_MASTER', how='inner')
+
+            if not res.empty:
+                df_final = res[['EAN', col_cant]].rename(columns={col_cant: 'Cantidad'})
+                st.success(f"✅ Se han convertido {len(df_final)} líneas.")
+                
+                out_c = io.BytesIO()
+                with pd.ExcelWriter(out_c, engine='openpyxl') as writer:
+                    df_final.to_excel(writer, index=False)
+                
+                st.download_button("📥 DESCARGAR EAN LIMPIOS", out_c.getvalue(), "ean_limpios.xlsx", use_container_width=True)
+            else:
+                st.error("No se encontraron coincidencias. Revisa el catálogo.")
+                
