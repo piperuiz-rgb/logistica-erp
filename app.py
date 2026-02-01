@@ -7,12 +7,14 @@ from openpyxl import load_workbook
 
 st.set_page_config(page_title="LogiFlow Ultra", layout="wide")
 
-# --- CSS ---
+# --- CSS MEJORADO ---
 st.markdown("""
     <style>
     .stApp { background-color: #ffffff; }
     .stButton>button { width: 100%; border-radius: 2px; }
     .tag-style { background-color: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; border: 1px solid #ddd; }
+    /* Botón de borrar en rojo suave */
+    div[data-testid="stColumn"] > div > button[kind="secondary"]:hover { color: red; border-color: red; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -21,13 +23,11 @@ def get_catalogue():
     if not os.path.exists('catalogue.xlsx'): return None
     df = pd.read_excel('catalogue.xlsx', engine='openpyxl')
     df['EAN'] = df['EAN'].astype(str).str.replace('.0', '', regex=False).str.strip()
-    # Creamos un diccionario para búsqueda instantánea por EAN
     return df, df.set_index('EAN').to_dict('index')
 
 # Inicializar sesión
 if 'carrito' not in st.session_state: st.session_state.carrito = {}
 
-# Carga de datos
 data_pack = get_catalogue()
 
 st.title("📦 LOGIFLOW PRO")
@@ -47,21 +47,19 @@ if data_pack:
         st.error("⚠️ El origen y destino coinciden.")
         st.stop()
 
-    # 2. OPERATIVA (Pestañas)
-    t1, t2 = st.tabs(["📂 CARGA MASIVA (EXCEL)", "🔍 BUSCADOR MANUAL"])
+    st.write("---")
+
+    # 2. OPERATIVA
+    t1, t2 = st.tabs(["📂 CARGA MASIVA", "🔍 BUSCADOR MANUAL"])
 
     with t1:
-        st.write("Sube un Excel con columnas **EAN** y **Cantidad**")
-        archivo_v = st.file_uploader("Seleccionar archivo", type=['xlsx'], key="uploader")
-        if archivo_v and st.button("PROCESAR Y AÑADIR", type="primary"):
+        archivo_v = st.file_uploader("Sube Excel de Ventas", type=['xlsx'], key="uploader")
+        if archivo_v and st.button("PROCESAR EXCEL", type="primary"):
             df_v = pd.read_excel(archivo_v)
             df_v.columns = df_v.columns.str.strip()
-            
-            exitos = 0
             for _, f_v in df_v.iterrows():
                 ean = str(f_v['EAN']).replace('.0', '').strip()
                 cant = int(f_v['Cantidad'])
-                
                 if ean in cat_dict:
                     prod = cat_dict[ean]
                     if ean in st.session_state.carrito:
@@ -72,50 +70,50 @@ if data_pack:
                             'Col': prod.get('Color','-'), 'Tal': prod.get('Talla','-'), 
                             'Cantidad': cant
                         }
-                    exitos += 1
-            st.success(f"Se han añadido {exitos} productos al carrito.")
             st.rerun()
 
     with t2:
-        busqueda = st.text_input("Escribe Ref, Nombre, Color o Talla...", key="main_search")
+        busqueda = st.text_input("Buscar...", placeholder="Referencia, Color, Talla...", key="main_search")
         if busqueda:
-            # Filtro optimizado
             mask = df_cat.apply(lambda row: busqueda.lower() in str(row.values).lower(), axis=1)
             resultados = df_cat[mask].head(15) 
 
             for _, f in resultados.iterrows():
                 ean = f['EAN']
                 en_carrito = ean in st.session_state.carrito
-                
                 c1, c2 = st.columns([4, 1.2])
                 c1.markdown(f"**{f['Referencia']}** - {f.get('Nombre','')} <br> <span class='tag-style'>{f.get('Color','-')}</span> <span class='tag-style'>{f.get('Talla','-')}</span>", unsafe_allow_html=True)
                 
-                label = f"Añadido ({st.session_state.carrito[ean]['Cantidad']})" if en_carrito else "Añadir"
-                if c2.button(label, key=f"btn_{ean}", type="primary" if en_carrito else "secondary"):
-                    if en_carrito:
-                        st.session_state.carrito[ean]['Cantidad'] += 1
+                txt = f"({st.session_state.carrito[ean]['Cantidad']})" if en_carrito else "Añadir"
+                if c2.button(txt, key=f"btn_{ean}", type="primary" if en_carrito else "secondary"):
+                    if en_carrito: st.session_state.carrito[ean]['Cantidad'] += 1
                     else:
-                        st.session_state.carrito[ean] = {
-                            'Ref': f['Referencia'], 'Nom': f.get('Nombre',''),
-                            'Col': f.get('Color','-'), 'Tal': f.get('Talla','-'), 'Cantidad': 1
-                        }
+                        st.session_state.carrito[ean] = {'Ref': f['Referencia'], 'Nom': f.get('Nombre',''), 'Col': f.get('Color','-'), 'Tal': f.get('Talla','-'), 'Cantidad': 1}
                     st.rerun()
 
     # 3. REVISIÓN Y EXPORTACIÓN
     if st.session_state.carrito:
         st.write("---")
-        st.subheader("📋 REVISIÓN")
+        st.subheader(f"📋 LISTA ({sum(it['Cantidad'] for it in st.session_state.carrito.values())} piezas)")
         
         for ean, item in list(st.session_state.carrito.items()):
             col_a, col_b, col_c = st.columns([3, 1, 0.5])
-            col_a.write(f"**{item['Ref']}** ({item['Col']}/{item['Tal']})")
+            col_a.write(f"**{item['Ref']}** - {item['Nom']} ({item['Col']}/{item['Tal']})")
             item['Cantidad'] = col_b.number_input("Cant", 1, 1000, item['Cantidad'], key=f"q_{ean}", label_visibility="collapsed")
             if col_c.button("✕", key=f"del_{ean}"):
                 del st.session_state.carrito[ean]
                 st.rerun()
 
+        st.write("###")
+        c_vaciar, c_descarga = st.columns([1, 2])
+        
+        # --- NUEVA OPCIÓN: VACIAR TODO ---
+        if c_vaciar.button("🗑️ VACIAR TODO", use_container_width=True):
+            st.session_state.carrito = {}
+            st.rerun()
+
         if os.path.exists('peticion.xlsx'):
-            if st.button("📥 FINALIZAR Y GENERAR EXCEL", type="primary"):
+            if c_descarga.button("📥 FINALIZAR Y GENERAR EXCEL", type="primary", use_container_width=True):
                 wb = load_workbook('peticion.xlsx')
                 ws = wb.active
                 for ean, it in st.session_state.carrito.items():
@@ -123,6 +121,6 @@ if data_pack:
                 
                 output = io.BytesIO()
                 wb.save(output)
-                st.download_button("⬇️ GUARDAR REPOSICIÓN", output.getvalue(), f"REPO_{destino}.xlsx")
+                st.download_button("⬇️ GUARDAR ARCHIVO", output.getvalue(), f"REPO_{destino}.xlsx", use_container_width=True)
 else:
     st.error("⚠️ Sube 'catalogue.xlsx' a GitHub.")
