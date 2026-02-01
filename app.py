@@ -5,7 +5,7 @@ import io
 from datetime import datetime
 from openpyxl import load_workbook
 
-st.set_page_config(page_title="LogiFlow Pro", layout="wide")
+st.set_page_config(page_title="Peticiones almacén", layout="wide")
 
 # --- RESET TOTAL DE COLOR PARA PC Y MÓVIL ---
 st.markdown("""
@@ -92,7 +92,7 @@ if 'carrito' not in st.session_state: st.session_state.carrito = {}
 
 data_pack = get_catalogue()
 
-st.title("📦 LOGIFLOW PRO")
+st.title("📦 Peticiones")
 
 if data_pack:
     df_cat, cat_dict = data_pack
@@ -177,7 +177,7 @@ if data_pack:
         </div>""", unsafe_allow_html=True)
 
         cv, cg = st.columns([1, 2])
-        if cv.button("LIMPIAR"):
+        if cv.button("LIMPIAR PETICIÓN"):
             st.session_state.carrito = {}; st.rerun()
         if os.path.exists('peticion.xlsx') and cg.button("GENERAR Y DESCARGAR", type="primary"):
             wb = load_workbook('peticion.xlsx')
