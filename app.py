@@ -54,7 +54,7 @@ def agregar_al_carrito(ean, ref, cant, origen, destino):
     st.toast(f"✅ {ref} añadido")
 
 # --- INTERFAZ ---
-st.title("📦 LOGIFLOW PRO")
+st.title("Peticiones")
 st.write("---")
 
 # 1. ENTRADA DE DATOS (Cabecera)
