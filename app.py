@@ -10,13 +10,9 @@ st.set_page_config(page_title="LogiFlow Ultra", layout="wide")
 # --- CSS DE CONTRASTE DINÁMICO ---
 st.markdown("""
     <style>
-    /* Fondo General Claro */
     .stApp { background-color: #ffffff; }
-    
-    /* Textos base en Negro */
     h1, h2, h3, p, span, label, .stMarkdown { color: #000000 !important; }
 
-    /* Tarjeta de producto: Fondo muy claro, borde marcado */
     .product-card {
         background-color: #fcfcfc;
         border: 1px solid #000000;
@@ -24,7 +20,6 @@ st.markdown("""
         margin-bottom: 8px;
     }
 
-    /* BOTONES */
     .stButton>button {
         width: 100%;
         border-radius: 2px;
@@ -32,27 +27,18 @@ st.markdown("""
         font-weight: bold !important;
     }
 
-    /* ESTADO 1: Botón NO AÑADIDO (Fondo claro, texto oscuro) */
+    /* BOTÓN NO AÑADIDO: Fondo claro, texto oscuro */
     .stButton>button[kind="secondary"] {
         background-color: #ffffff !important;
         color: #000000 !important;
     }
-    .stButton>button[kind="secondary"]:hover {
-        background-color: #f0f0f0 !important;
-    }
 
-    /* ESTADO 2: Botón AÑADIDO (Fondo oscuro, texto claro) */
-    /* Usamos un gris carbón para que el blanco resalte al máximo */
+    /* BOTÓN AÑADIDO: Fondo oscuro, texto claro (Blanco sobre Gris Carbón) */
     .stButton>button[kind="primary"] {
         background-color: #333333 !important;
         color: #ffffff !important;
-        border: 1px solid #000000 !important;
-    }
-    .stButton>button[kind="primary"]:hover {
-        background-color: #000000 !important;
     }
 
-    /* Etiquetas de Color/Talla */
     .tag-style {
         background-color: #000000;
         color: #ffffff !important;
@@ -109,20 +95,25 @@ if data_pack:
             st.rerun()
 
     with t2:
-        busq = st.text_input("Buscar por referencia, nombre o color...")
+        col_busq, col_lim = st.columns([3, 1])
+        busq = col_busq.text_input("Buscar producto...")
+        limite = col_lim.selectbox("Ver resultados", [20, 50, 100, "Todos"])
+        
         if busq:
             mask = df_cat.apply(lambda row: busq.lower() in str(row.values).lower(), axis=1)
-            res = df_cat[mask].head(15)
+            res = df_cat[mask]
+            
+            # Aplicar límite
+            if limite != "Todos":
+                res = res.head(int(limite))
+            
             for _, f in res.iterrows():
                 ean = f['EAN']
                 en_car = ean in st.session_state.carrito
                 
                 st.markdown('<div class="product-card">', unsafe_allow_html=True)
                 c1, c2 = st.columns([4, 1.2])
-                c1.markdown(f"""
-                    **{f['Referencia']}** — {f.get('Nombre','')}<br>
-                    <span class='tag-style'>{f.get('Color','-')}</span> <span class='tag-style'>{f.get('Talla','-')}</span>
-                """, unsafe_allow_html=True)
+                c1.markdown(f"**{f['Referencia']}** — {f.get('Nombre','')}<br><span class='tag-style'>{f.get('Color','-')}</span> <span class='tag-style'>{f.get('Talla','-')}</span>", unsafe_allow_html=True)
                 
                 label = f"Llevas {st.session_state.carrito[ean]['Cantidad']}" if en_car else "Añadir"
                 if c2.button(label, key=f"b_{ean}", type="primary" if en_car else "secondary"):
@@ -147,7 +138,7 @@ if data_pack:
 
         st.write("###")
         c_v, c_d = st.columns([1, 2])
-        if c_v.button("🗑️ VACIAR"):
+        if c_v.button("🗑️ VACIAR CARRITO"):
             st.session_state.carrito = {}
             st.rerun()
             
