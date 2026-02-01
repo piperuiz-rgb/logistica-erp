@@ -53,7 +53,7 @@ if data_pack:
     t1, t2 = st.tabs(["📂 CARGA MASIVA", "🔍 BUSCADOR MANUAL"])
 
     with t1:
-        archivo_v = st.file_uploader("Sube Excel de Ventas", type=['xlsx'], key="uploader")
+        archivo_v = st.file_uploader("Sube Reposición", type=['xlsx'], key="uploader")
         if archivo_v and st.button("PROCESAR EXCEL", type="primary"):
             df_v = pd.read_excel(archivo_v)
             df_v.columns = df_v.columns.str.strip()
