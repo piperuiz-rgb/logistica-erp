@@ -7,15 +7,16 @@ from openpyxl import load_workbook
 
 st.set_page_config(page_title="LogiFlow Ultra", layout="wide")
 
-# --- CSS DE ALTO CONTRASTE Y LEGIBILIDAD ---
+# --- CSS DE CONTRASTE DINÁMICO ---
 st.markdown("""
     <style>
+    /* Fondo General Claro */
     .stApp { background-color: #ffffff; }
     
-    /* Forzar texto negro en toda la app */
+    /* Textos base en Negro */
     h1, h2, h3, p, span, label, .stMarkdown { color: #000000 !important; }
 
-    /* Tarjeta de producto */
+    /* Tarjeta de producto: Fondo muy claro, borde marcado */
     .product-card {
         background-color: #fcfcfc;
         border: 1px solid #000000;
@@ -23,35 +24,42 @@ st.markdown("""
         margin-bottom: 8px;
     }
 
-    /* BOTONES: Estilo Base */
+    /* BOTONES */
     .stButton>button {
         width: 100%;
-        border-radius: 0px;
+        border-radius: 2px;
         border: 1px solid #000000 !important;
         font-weight: bold !important;
-        transition: 0.2s;
     }
 
-    /* Botón ANTES de añadir (Blanco) */
+    /* ESTADO 1: Botón NO AÑADIDO (Fondo claro, texto oscuro) */
     .stButton>button[kind="secondary"] {
         background-color: #ffffff !important;
         color: #000000 !important;
     }
-
-    /* Botón DESPUÉS de añadir (Gris claro para legibilidad total) */
-    .stButton>button[kind="primary"] {
-        background-color: #dddddd !important;
-        color: #000000 !important;
-        border: 1px solid #000000 !important;
+    .stButton>button[kind="secondary"]:hover {
+        background-color: #f0f0f0 !important;
     }
 
+    /* ESTADO 2: Botón AÑADIDO (Fondo oscuro, texto claro) */
+    /* Usamos un gris carbón para que el blanco resalte al máximo */
+    .stButton>button[kind="primary"] {
+        background-color: #333333 !important;
+        color: #ffffff !important;
+        border: 1px solid #000000 !important;
+    }
+    .stButton>button[kind="primary"]:hover {
+        background-color: #000000 !important;
+    }
+
+    /* Etiquetas de Color/Talla */
     .tag-style {
-        background-color: #eeeeee;
-        padding: 2px 6px;
-        color: #000000;
+        background-color: #000000;
+        color: #ffffff !important;
+        padding: 2px 8px;
         font-weight: bold;
-        border: 1px solid #999999;
         font-size: 0.8em;
+        margin-right: 5px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -81,7 +89,7 @@ if data_pack:
         obs = st.text_input("Observaciones")
 
     if origen == destino:
-        st.error("⚠️ Origen y Destino iguales.")
+        st.error("⚠️ El origen y destino coinciden.")
         st.stop()
 
     # 2. OPERATIVA
@@ -95,12 +103,13 @@ if data_pack:
                 ean = str(f_v['EAN']).replace('.0', '').strip()
                 if ean in cat_dict:
                     prod = cat_dict[ean]
-                    if ean in st.session_state.carrito: st.session_state.carrito[ean]['Cantidad'] += int(f_v['Cantidad'])
-                    else: st.session_state.carrito[ean] = {'Ref': prod['Referencia'], 'Nom': prod.get('Nombre',''), 'Col': prod.get('Color','-'), 'Tal': prod.get('Talla','-'), 'Cantidad': int(f_v['Cantidad'])}
+                    cant_v = int(f_v.get('Cantidad', 1))
+                    if ean in st.session_state.carrito: st.session_state.carrito[ean]['Cantidad'] += cant_v
+                    else: st.session_state.carrito[ean] = {'Ref': prod['Referencia'], 'Nom': prod.get('Nombre',''), 'Col': prod.get('Color','-'), 'Tal': prod.get('Talla','-'), 'Cantidad': cant_v}
             st.rerun()
 
     with t2:
-        busq = st.text_input("Escribe para buscar...")
+        busq = st.text_input("Buscar por referencia, nombre o color...")
         if busq:
             mask = df_cat.apply(lambda row: busq.lower() in str(row.values).lower(), axis=1)
             res = df_cat[mask].head(15)
@@ -110,24 +119,28 @@ if data_pack:
                 
                 st.markdown('<div class="product-card">', unsafe_allow_html=True)
                 c1, c2 = st.columns([4, 1.2])
-                c1.markdown(f"**{f['Referencia']}** — {f.get('Nombre','')}<br><span class='tag-style'>{f.get('Color','-')}</span> <span class='tag-style'>{f.get('Talla','-')}</span>", unsafe_allow_html=True)
+                c1.markdown(f"""
+                    **{f['Referencia']}** — {f.get('Nombre','')}<br>
+                    <span class='tag-style'>{f.get('Color','-')}</span> <span class='tag-style'>{f.get('Talla','-')}</span>
+                """, unsafe_allow_html=True)
                 
-                label = f"En lista ({st.session_state.carrito[ean]['Cantidad']})" if en_car else "Añadir"
-                # Usamos primary para el estado "Añadido" y secondary para el "Normal"
+                label = f"Llevas {st.session_state.carrito[ean]['Cantidad']}" if en_car else "Añadir"
                 if c2.button(label, key=f"b_{ean}", type="primary" if en_car else "secondary"):
                     if en_car: st.session_state.carrito[ean]['Cantidad'] += 1
                     else: st.session_state.carrito[ean] = {'Ref': f['Referencia'], 'Nom': f.get('Nombre',''), 'Col': f.get('Color','-'), 'Tal': f.get('Talla','-'), 'Cantidad': 1}
                     st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
 
-    # 3. REVISIÓN
+    # 3. REVISIÓN Y EXPORTACIÓN
     if st.session_state.carrito:
         st.write("---")
-        st.subheader(f"📋 LISTA ({sum(it['Cantidad'] for it in st.session_state.carrito.values())} Uds)")
+        total_p = sum(it['Cantidad'] for it in st.session_state.carrito.values())
+        st.subheader(f"📋 RESUMEN ({total_p} piezas)")
+        
         for ean, item in list(st.session_state.carrito.items()):
             ca, cb, cc = st.columns([3, 1, 0.5])
-            ca.write(f"**{item['Ref']}** - {item['Nom']}")
-            item['Cantidad'] = cb.number_input("Cant", 1, 1000, item['Cantidad'], key=f"q_{ean}", label_visibility="collapsed")
+            ca.write(f"**{item['Ref']}** - {item['Nom']} ({item['Col']}/{item['Tal']})")
+            item['Cantidad'] = cb.number_input("Uds", 1, 1000, item['Cantidad'], key=f"q_{ean}", label_visibility="collapsed")
             if cc.button("✕", key=f"d_{ean}"):
                 del st.session_state.carrito[ean]
                 st.rerun()
@@ -137,6 +150,7 @@ if data_pack:
         if c_v.button("🗑️ VACIAR"):
             st.session_state.carrito = {}
             st.rerun()
+            
         if os.path.exists('peticion.xlsx') and c_d.button("📥 GENERAR EXCEL", type="primary"):
             wb = load_workbook('peticion.xlsx')
             ws = wb.active
@@ -146,4 +160,4 @@ if data_pack:
             wb.save(out)
             st.download_button("⬇️ GUARDAR REPOSICIÓN", out.getvalue(), f"REPO_{destino}.xlsx")
 else:
-    st.error("Falta 'catalogue.xlsx'")
+    st.error("Falta 'catalogue.xlsx' en GitHub.")
