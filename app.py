@@ -5,12 +5,12 @@ import io
 from datetime import datetime
 from openpyxl import load_workbook
 
-st.set_page_config(page_title="Peticiones almacén", layout="wide")
+st.set_page_config(page_title="Peticiones", layout="wide")
 
-# --- RESET TOTAL DE COLOR PARA PC Y MÓVIL ---
+# --- CSS TÉCNICO DEFINITIVO Y LIMPIO ---
 st.markdown("""
     <style>
-    /* 1. FORZAR FONDO BLANCO EN TODA LA ESTRUCTURA */
+    /* 1. RESET DE COLOR Y FONDO (Nuclear White) */
     html, body, .stApp, .main, .block-container, 
     div[data-testid="stExpander"], div[data-testid="stTab"], 
     div[data-testid="stHeader"], .stTabs, [data-testid="stVerticalBlock"] {
@@ -18,20 +18,24 @@ st.markdown("""
         color: #000000 !important;
     }
 
-    /* 2. FORZAR TEXTO NEGRO EN TODO TIPO DE ELEMENTO */
-    h1, h2, h3, p, span, label, li, .stMarkdown, div, 
-    .stSelectbox label, .stTextInput label, .stDateInput label {
-        color: #000000 !important;
-    }
-
-    /* 3. LIMPIAR CAJONES DE INPUTS (Poner bordes claros en PC) */
-    input, select, textarea, div[role="listbox"] {
+    /* 2. LIMPIEZA TOTAL DE SELECTORES (Sin barras ni sombras) */
+    div[data-testid="stSelectbox"] > div {
         background-color: #ffffff !important;
-        color: #000000 !important;
+        border: none !important;
+    }
+    div[data-baseweb="select"] {
         border: 1px solid #000000 !important;
+        border-radius: 0px !important;
+    }
+    div[data-baseweb="select"] > div {
+        background-color: #ffffff !important;
+        border: none !important;
     }
 
-    /* 4. TABLA TÉCNICA CON BORDES COMPLETOS */
+    /* 3. TEXTO Y TABLA */
+    h1, h2, h3, p, span, label, li, .stMarkdown, div {
+        color: #000000 !important;
+    }
     .table-row {
         border: 1px solid #000000;
         margin-top: -1px;
@@ -40,7 +44,6 @@ st.markdown("""
         align-items: center;
         width: 100%;
     }
-    
     .cell-content {
         padding: 8px 12px;
         display: flex;
@@ -48,7 +51,7 @@ st.markdown("""
         justify-content: center;
     }
 
-    /* 5. BOTONES OPTIMIZADOS (Texto ajustado para que quepa) */
+    /* 4. BOTONES (Texto pequeño para evitar cortes) */
     .stButton>button {
         width: 100% !important;
         border-radius: 0px !important;
@@ -56,18 +59,13 @@ st.markdown("""
         height: 38px;
         text-transform: uppercase;
         border: 1px solid #000000 !important;
-        font-size: 0.7rem !important;
-        padding: 0px 4px !important;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        font-size: 0.65rem !important;
+        padding: 0px 2px !important;
     }
-
-    /* Botón Secundario: Blanco | Primario: Azul */
     .stButton>button[kind="secondary"] { background-color: #ffffff !important; color: #000000 !important; }
     .stButton>button[kind="primary"] { background-color: #0052FF !important; color: #ffffff !important; border: none !important; }
 
-    /* 6. CUADRO DE RESUMEN FINAL */
+    /* 5. RESUMEN FINAL */
     .summary-box {
         border: 2px solid #000000;
         padding: 15px;
@@ -92,7 +90,7 @@ if 'carrito' not in st.session_state: st.session_state.carrito = {}
 
 data_pack = get_catalogue()
 
-st.title("📦 Peticiones")
+st.title("Peticiones")
 
 if data_pack:
     df_cat, cat_dict = data_pack
@@ -126,7 +124,7 @@ if data_pack:
             st.rerun()
 
     with t2:
-        busq = st.text_input("Filtrar por Referencia, Nombre o Color...", key="search_pc")
+        busq = st.text_input("Filtrar por Referencia, Nombre o Color...", key="search_main")
         if busq:
             mask = df_cat.apply(lambda row: busq.lower() in str(row.values).lower(), axis=1)
             res = df_cat[mask].head(30)
@@ -152,7 +150,7 @@ if data_pack:
                         st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
 
-    # LISTA DE REVISIÓN Y RESUMEN FINAL
+    # LISTA Y RESUMEN FINAL
     if st.session_state.carrito:
         st.write("###")
         st.markdown("<div style='background: #000; color: #fff; padding: 5px; font-weight: bold;'>LISTA DE REPOSICIÓN</div>", unsafe_allow_html=True)
@@ -169,7 +167,7 @@ if data_pack:
                     del st.session_state.carrito[ean]; st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # RESUMEN DE TOTALES AL FINAL
+        # RESUMEN AL FINAL
         uds = sum(it['Cantidad'] for it in st.session_state.carrito.values())
         refs = len(st.session_state.carrito)
         st.markdown(f"""<div class="summary-box">
@@ -177,7 +175,7 @@ if data_pack:
         </div>""", unsafe_allow_html=True)
 
         cv, cg = st.columns([1, 2])
-        if cv.button("LIMPIAR PETICIÓN"):
+        if cv.button("LIMPIAR"):
             st.session_state.carrito = {}; st.rerun()
         if os.path.exists('peticion.xlsx') and cg.button("GENERAR Y DESCARGAR", type="primary"):
             wb = load_workbook('peticion.xlsx')
@@ -188,3 +186,4 @@ if data_pack:
             st.download_button("CLIC PARA DESCARGAR EXCEL", out.getvalue(), f"REPO_{destino}.xlsx", use_container_width=True)
 else:
     st.error("Archivo catálogo no encontrado.")
+    
