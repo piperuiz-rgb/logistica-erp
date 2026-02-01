@@ -75,64 +75,76 @@ if df_cat is not None:
 
     st.write("---")
 
-    # 2. IMPORTADOR MASIVO (AJUSTADO A TUS COLUMNAS)
-    st.markdown('<div class="section-header">📂 CARGA DE VENTAS GEXTIA</div>', unsafe_allow_html=True)
-    archivo_v = st.file_uploader("Sube el informe de ventas", type=['xlsx'], label_visibility="collapsed")
-    
-    if archivo_v and st.button("PROCESAR REPOSICIÓN", type="primary"):
+# --- INICIO DEL BLOQUE DE REPOSICIÓN ---
+st.markdown("### 📂 Importación Masiva de Ventas")
+archivo_v = st.file_uploader("Sube el informe de Gextia (Excel)", type=['xlsx'])
+
+if archivo_v:
+    # Mostramos el botón solo si hay archivo. Usamos type="primary" para evitar errores de red.
+    if st.button("PROCESAR REPOSICIÓN ACTUAL", type="primary"):
         import re
         df_v = pd.read_excel(archivo_v)
         
-        # Validamos que las columnas existan
+        # Limpieza de nombres de columnas
+        df_v.columns = [str(c).strip() for c in df_v.columns]
+        
         if 'EAN' in df_v.columns and 'Cantidad' in df_v.columns:
-            # Normalizamos catálogo para que el cruce sea exacto
-            df_cat['Ref_Str'] = df_cat['Referencia'].astype(str).str.strip().str.upper()
-            df_cat['Col_Str'] = df_cat['Color'].astype(str).str.strip().str.upper()
-            df_cat['Tal_Str'] = df_cat['Talla'].astype(str).str.strip().str.upper()
+            # Preparamos el catálogo para el cruce rápido
+            df_cat['Ref_Busca'] = df_cat['Referencia'].astype(str).str.strip().str.upper()
+            df_cat['Col_Busca'] = df_cat['Color'].astype(str).str.strip().str.upper()
+            df_cat['Tal_Busca'] = df_cat['Talla'].astype(str).str.strip().str.upper()
 
-            exitos = 0
-            for _, f_v in df_v.iterrows():
-                texto_sucio = str(f_v['EAN']) # Aquí viene el texto [249200]...
-                cant_v = int(f_v['Cantidad'])
+            contador_ok = 0
+            
+            for _, fila in df_v.iterrows():
+                # El "EAN" de tu excel realmente es: [249200] Shirt Ghisel (AZUL JAC, XS)
+                texto_completo = str(fila['EAN'])
+                cant_v = int(fila['Cantidad'])
                 
-                # Extraer datos con Regex
-                match_ref = re.search(r'\[(.*?)\]', texto_sucio)
-                match_specs = re.search(r'\((.*?)\)', texto_sucio)
+                # Extraemos los datos con Regex
+                res_ref = re.search(r'\[(.*?)\]', texto_completo)
+                res_specs = re.search(r'\((.*?)\)', texto_completo)
                 
-                if match_ref and match_specs:
-                    ref_v = match_ref.group(1).strip().upper()
-                    specs = match_specs.group(1).split(',')
+                if res_ref and res_specs:
+                    ref_extraida = res_ref.group(1).strip().upper()
+                    # Separamos el contenido del paréntesis por la coma
+                    partes = res_specs.group(1).split(',')
                     
-                    if len(specs) >= 2:
-                        color_v = specs[0].strip().upper()
-                        talla_v = specs[1].strip().upper()
+                    if len(partes) >= 2:
+                        color_extraido = partes[0].strip().upper()
+                        talla_extraida = partes[1].strip().upper()
                         
-                        # Buscamos la fila correcta en el catálogo
+                        # Buscamos la coincidencia exacta en el catálogo
                         match = df_cat[
-                            (df_cat['Ref_Str'] == ref_v) & 
-                            (df_cat['Col_Str'] == color_v) & 
-                            (df_cat['Tal_Str'] == talla_v)
+                            (df_cat['Ref_Busca'] == ref_extraida) & 
+                            (df_cat['Col_Busca'] == color_extraido) & 
+                            (df_cat['Tal_Busca'] == talla_extraida)
                         ]
                         
                         if not match.empty:
-                            prod = match.iloc[0]
-                            # Usamos el EAN auténtico del catálogo para el carrito
-                            ean_final = str(prod['EAN'])
-                            if ean_final in st.session_state.carrito:
-                                st.session_state.carrito[ean_final]['Cantidad'] += cant_v
+                            producto = match.iloc[0]
+                            ean_real = str(producto['EAN'])
+                            
+                            # Añadimos al carrito de la sesión
+                            if ean_real in st.session_state.carrito:
+                                st.session_state.carrito[ean_real]['Cantidad'] += cant_v
                             else:
-                                st.session_state.carrito[ean_final] = {
-                                    'Ref': prod['Referencia'], 
-                                    'Nom': prod.get('Nombre',''), 
-                                    'Col': prod.get('Color','-'), 
-                                    'Tal': prod.get('Talla','-'), 
+                                st.session_state.carrito[ean_real] = {
+                                    'Ref': producto['Referencia'],
+                                    'Nom': producto.get('Nombre', 'Producto'),
+                                    'Col': producto['Color'],
+                                    'Tal': producto['Talla'],
                                     'Cantidad': cant_v
                                 }
-                            exitos += 1
-            st.success(f"Se han procesado {exitos} variantes correctamente.")
+                            contador_ok += 1
+                        else:
+                            st.warning(f"No encontrado en catálogo: {ref_extraida} | {color_extraido} | {talla_extraida}")
+            
+            st.success(f"✅ ¡Proceso completado! Se han cargado {contador_ok} líneas correctamente.")
             st.rerun()
         else:
-            st.error("Error: El Excel debe tener las columnas 'EAN' y 'Cantidad'.")
+            st.error("El Excel debe tener las columnas 'EAN' y 'Cantidad'")
+# --- FIN DEL BLOQUE DE REPOSICIÓN ---
 
     # 3. BUSCADOR Y FILTROS
     st.markdown('<div class="section-header">🔍 BUSCADOR MANUAL</div>', unsafe_allow_html=True)
