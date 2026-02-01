@@ -155,11 +155,8 @@ with tab1:
             for ean, item in list(st.session_state.carrito.items()):
                 st.markdown('<div class="table-row">', unsafe_allow_html=True)
                 ca, cb, cc = st.columns([2.5, 1.2, 0.8])
-                with ca: st.markdown(f"<div class='cell-content'><strong>{item['Ref']}</strong><br><small>{item['Nom']}</small></div>", unsafe_allow_html=True)
-                with cb: item['Cantidad'] = st.number_input("C", 1, 9999, item['Cantidad'], key=f"q_{ean}", label_visibility="collapsed")
-                with cc:
-                    if st.button("✕", key=f"d_{ean}"): del st.session_state.carrito[ean]; st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
+                with ca: st.markdown(f"<div class='cell-content'><strong>{item['Ref']}</strong><br><small>{item['Nom']} ({item['Col']} / {item['Tal']})</small></div>", unsafe_allow_html=True)
+
 
             uds = sum(it['Cantidad'] for it in st.session_state.carrito.values())
             st.markdown(f'<div class="summary-box"><div>PIEZAS: {uds}</div><div>MODELOS: {len(st.session_state.carrito)}</div><div>DESTINO: {destino}</div></div>', unsafe_allow_html=True)
