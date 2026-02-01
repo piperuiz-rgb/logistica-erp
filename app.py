@@ -6,20 +6,20 @@ from datetime import datetime
 from openpyxl import load_workbook
 
 # Configuración estética
-st.set_page_config(page_title="LogiFlow Pro | Dark & White", layout="wide")
+st.set_page_config(page_title="LogiFlow Pro | Final Check", layout="wide")
 
-# --- ESTILOS CSS ---
+# --- ESTILOS CSS (Blanco, Negro y Grises) ---
 st.markdown("""
     <style>
     .stApp { background-color: #fcfcfc; }
     h1, h2, h3 { color: #1a1a1a !important; font-family: 'Inter', sans-serif; font-weight: 700; }
+    /* Tarjetas de Totales al final */
     div[data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
+        background-color: #f8f9fa;
+        border: 1px solid #000000;
         border-radius: 4px;
-        padding: 20px;
+        padding: 15px;
     }
-    /* Botón tipo "Añadido" (Negro) */
     .stButton>button[kind="primary"] {
         background-color: #000000 !important;
         color: #ffffff !important;
@@ -48,39 +48,31 @@ def agregar_al_carrito(ean, ref, cant, origen, destino):
     for item in st.session_state.carrito:
         if str(item['EAN']) == str(ean):
             item['Unidades'] += cant
-            st.toast(f"➕ {ref}: Ahora {item['Unidades']} uds.") # Aviso flotante
+            st.toast(f"➕ {ref}: {item['Unidades']} uds.")
             return
     st.session_state.carrito.append({'EAN': ean, 'Origen': origen, 'Destino': destino, 'Referencia': ref, 'Unidades': cant})
-    st.toast(f"✅ {ref} añadido al pedido")
+    st.toast(f"✅ {ref} añadido")
 
 # --- INTERFAZ ---
 st.title("📦 LOGIFLOW PRO")
 st.write("---")
 
-# Métricas superiores
-if st.session_state.carrito:
-    c1, c2, c3 = st.columns(3)
-    c1.metric("UNIDADES TOTALES", sum(item['Unidades'] for item in st.session_state.carrito))
-    c2.metric("REFERENCIAS", len(st.session_state.carrito))
-    c3.metric("DESTINO", st.session_state.carrito[0]['Destino'])
-
-# Configuración inicial
+# 1. ENTRADA DE DATOS (Cabecera)
 with st.container():
-    col_date, col_ref = st.columns(2)
-    fecha_peticion = col_date.date_input("FECHA", datetime.now())
+    fecha_peticion = st.date_input("FECHA", datetime.now())
+    col_ref, col_o, col_d = st.columns([1.5, 1, 1])
     ref_peticion = col_ref.text_input("REF. PEDIDO", placeholder="EJ: 2024-X")
-    
-    col_o, col_d = st.columns(2)
     almacenes = ["ALM-CENTRAL", "ALM-NORTE", "ALM-SUR", "ALM-TIENDA"]
     origen = col_o.selectbox("ORIGEN", almacenes)
     destino = col_d.selectbox("DESTINO", almacenes)
 
 if origen == destino:
-    st.error("⚠️ Selecciona almacenes distintos.")
+    st.error("⚠️ El Origen y Destino no pueden coincidir.")
     st.stop()
 
 st.write("###")
 
+# 2. OPERATIVA (Carga y Búsqueda)
 t1, t2 = st.tabs(["📂 CARGA MASIVA", "⌨️ BÚSQUEDA MANUAL"])
 
 with t1:
@@ -96,28 +88,25 @@ with t1:
         st.rerun()
 
 with t2:
-    busqueda = st.text_input("Buscar referencia (o micro 🎤)", placeholder="Ej: 101...")
+    busqueda = st.text_input("Buscar referencia o nombre 🎤", placeholder="Escribir aquí...")
     if busqueda:
         res = df_inv[df_inv.apply(lambda row: row.astype(str).str.contains(busqueda, case=False).any(), axis=1)].head(6)
         for _, f in res.iterrows():
             col_t, col_b = st.columns([4, 1.5])
             col_t.markdown(f"**{f['Referencia']}** \n<small style='color: #666;'>{f['Nombre']}</small>", unsafe_allow_html=True)
-            
-            # --- LÓGICA DE BOTÓN CON CAMBIO DE COLOR ---
             ya_esta = any(str(i['EAN']) == str(f['EAN']) for i in st.session_state.carrito)
             
-            texto_boton = "Añadido (+1)" if ya_esta else "Añadir"
-            tipo_boton = "primary" if ya_esta else "secondary" # primary = negro según nuestro CSS
-            
-            if col_b.button(texto_boton, key=f"add_{f['EAN']}", use_container_width=True, type=tipo_boton):
+            if col_b.button("Añadido (+1)" if ya_esta else "Añadir", key=f"add_{f['EAN']}", 
+                            use_container_width=True, type="primary" if ya_esta else "secondary"):
                 agregar_al_carrito(f['EAN'], f['Referencia'], 1, origen, destino)
                 st.rerun()
 
-# --- REVISIÓN ---
+# 3. REVISIÓN Y TOTALES (Sección de Cierre)
 if st.session_state.carrito:
     st.write("---")
-    st.write("### REVISIÓN DE PEDIDO")
+    st.subheader("📋 REVISIÓN Y CIERRE DE PEDIDO")
     
+    # Listado de productos para ajustar cantidades
     for i, item in enumerate(st.session_state.carrito):
         col_p, col_c, col_x = st.columns([3, 2, 0.5])
         col_p.markdown(f"<div style='padding-top:10px;'><b>{item['Referencia']}</b></div>", unsafe_allow_html=True)
@@ -127,8 +116,17 @@ if st.session_state.carrito:
             st.session_state.carrito.pop(i)
             st.rerun()
 
-    # --- ACCIONES FINALES ---
     st.write("###")
+    
+    # PANEL DE TOTALES FINALES (Justo antes de descargar)
+    with st.container():
+        st.markdown("#### Resumen Final")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("TOTAL PIEZAS", sum(item['Unidades'] for item in st.session_state.carrito))
+        c2.metric("REFS. DISTINTAS", len(st.session_state.carrito))
+        c3.metric("ENTREGA EN", destino)
+
+    # ACCIONES FINALES
     if os.path.exists('plantilla.xlsx'):
         try:
             wb = load_workbook('plantilla.xlsx'); ws = wb.active 
@@ -140,10 +138,11 @@ if st.session_state.carrito:
                 ws.cell(row=idx+2, column=5, value=r['Unidades'])
             out = io.BytesIO(); wb.save(out)
             
+            st.write("###")
             c_v, c_d = st.columns([1, 2])
-            if c_v.button("BORRAR TODO", use_container_width=True):
+            if c_v.button("LIMPIAR TODO", use_container_width=True):
                 st.session_state.carrito = []
                 st.rerun()
-            c_d.download_button("DESCARGAR EXCEL FINAL", data=out.getvalue(), 
+            c_d.download_button("📥 CONFIRMAR Y DESCARGAR EXCEL", data=out.getvalue(), 
                                file_name=f"PEDIDO_{ref_peticion}.xlsx", use_container_width=True, type="primary")
-        except: st.error("Error con plantilla.xlsx")
+        except: st.error("Error al generar el archivo. Verifica plantilla.xlsx")
