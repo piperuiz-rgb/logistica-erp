@@ -7,62 +7,65 @@ from openpyxl import load_workbook
 
 st.set_page_config(page_title="LogiFlow Pro", layout="wide")
 
-# --- CSS TÉCNICO: TABLA PURA Y ALTO CONTRASTE ---
+# --- CSS TÉCNICO DEFINITIVO ---
 st.markdown("""
     <style>
-    /* Fondo Blanco Nieve */
-    .stApp, div[data-testid="stExpander"], div[data-testid="stTab"] { 
+    /* Fondo Blanco Absoluto en toda la interfaz */
+    .stApp, div[data-testid="stExpander"], div[data-testid="stTab"], .stTabs, [data-testid="stHeader"] { 
         background-color: #ffffff !important; 
     }
     
     /* Forzar Texto Negro */
     h1, h2, h3, p, span, label, .stMarkdown { color: #000000 !important; }
 
-    /* Estructura de Tabla con Bordes Laterales */
+    /* Estructura de Tabla con Bordes Totales */
     .table-row {
         border: 1px solid #000000;
         margin-top: -1px;
-        padding: 0px; /* Controlado por columnas */
         background-color: #ffffff;
+        display: flex;
+        align-items: center;
     }
     
     .cell-content {
-        padding: 10px;
+        padding: 8px 12px;
         display: flex;
         flex-direction: column;
         justify-content: center;
-        height: 100%;
     }
 
-    /* Centrado del Botón */
+    /* Centrado y ajuste del Botón */
     div[data-testid="column"] {
         display: flex;
         align-items: center;
         justify-content: center;
+        padding: 5px !important;
     }
 
-    /* Botones Cuadrados */
     .stButton>button {
-        width: 90% !important;
+        width: 100% !important;
         border-radius: 0px !important;
         font-weight: 700 !important;
-        height: 45px;
+        height: 38px;
         text-transform: uppercase;
         border: 1px solid #000000 !important;
+        font-size: 0.7rem !important; /* Fuente ajustada para que quepa el texto */
+        padding: 0px 5px !important;
     }
 
-    /* Botón Secundario (Blanco) y Primario (Azul Eléctrico) */
     .stButton>button[kind="secondary"] { background-color: #ffffff !important; color: #000000 !important; }
     .stButton>button[kind="primary"] { background-color: #0052FF !important; color: #ffffff !important; border: none !important; }
 
-    /* Panel de Resumen Superior */
+    /* Cuadro de Resumen (Ahora al final) */
     .summary-box {
         border: 2px solid #000000;
         padding: 15px;
+        margin-top: 20px;
         margin-bottom: 20px;
         display: flex;
         justify-content: space-between;
-        background-color: #fdfdfd;
+        background-color: #ffffff;
+        font-weight: bold;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -89,22 +92,10 @@ if data_pack:
         fecha_str = c1.date_input("FECHA", datetime.now()).strftime('%Y-%m-%d')
         origen = c2.selectbox("ORIGEN", ["PET Almacén Badalona", "ALM-CENTRAL"])
         destino = c3.selectbox("DESTINO", ["PET T002 Marbella", "ALM-TIENDA"])
-        obs = st.text_input("OBSERVACIONES")
+        ref_peticion = st.text_input("REFERENCIA PETICIÓN") # Campo renombrado
 
     if origen == destino:
         st.error("Error: Origen y Destino coinciden."); st.stop()
-
-    # --- RESUMEN DE UNIDADES (Cuadro de Mando) ---
-    total_uds = sum(it['Cantidad'] for it in st.session_state.carrito.values())
-    total_refs = len(st.session_state.carrito)
-    
-    st.markdown(f"""
-    <div class="summary-box">
-        <div><strong>UNIDADES:</strong> {total_uds}</div>
-        <div><strong>REFERENCIAS:</strong> {total_refs}</div>
-        <div><strong>DESTINO:</strong> {destino}</div>
-    </div>
-    """, unsafe_allow_html=True)
 
     # 2. OPERATIVA
     t1, t2 = st.tabs(["📂 CARGA EXCEL", "🔍 BUSCADOR MANUAL"])
@@ -123,26 +114,24 @@ if data_pack:
             st.rerun()
 
     with t2:
-        busq = st.text_input("Buscar...", placeholder="Ref, Nombre...")
+        busq = st.text_input("Filtrar catálogo...", placeholder="Ref, Nombre...")
         if busq:
             mask = df_cat.apply(lambda row: busq.lower() in str(row.values).lower(), axis=1)
-            res = df_cat[mask].head(25)
+            res = df_cat[mask].head(30)
             
-            # Cabecera de tabla
-            st.markdown("<div style='border: 1px solid #000; border-bottom: none; background: #000; color: #fff; padding: 5px; font-size: 0.8rem; text-align: center;'>CATÁLOGO DISPONIBLE</div>", unsafe_allow_html=True)
+            st.markdown("<div style='border: 1px solid #000; border-bottom: none; background: #000; color: #fff; padding: 5px; font-size: 0.75rem; text-align: center;'>CATÁLOGO</div>", unsafe_allow_html=True)
             
             for _, f in res.iterrows():
                 ean = f['EAN']
                 en_car = ean in st.session_state.carrito
                 
-                # Fila con bordes laterales y centrado
                 st.markdown('<div class="table-row">', unsafe_allow_html=True)
                 c1, c2 = st.columns([4, 1.2])
                 with c1:
                     st.markdown(f"""<div class='cell-content'>
-                        <strong>{f['Referencia']}</strong>
-                        <span style='font-size: 0.85rem;'>{f.get('Nombre','')}</span>
-                        <span style='font-size: 0.75rem; color: #666;'>{f.get('Color','-')} / {f.get('Talla','-')}</span>
+                        <span style='font-weight: 800;'>{f['Referencia']}</span>
+                        <span style='font-size: 0.8rem;'>{f.get('Nombre','')}</span>
+                        <span style='font-size: 0.7rem; color: #555;'>{f.get('Color','-')} / {f.get('Talla','-')}</span>
                     </div>""", unsafe_allow_html=True)
                 with c2:
                     label = f"OK ({st.session_state.carrito[ean]['Cantidad']})" if en_car else "AÑADIR"
@@ -152,10 +141,10 @@ if data_pack:
                         st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
 
-    # 3. LISTA DE REVISIÓN
+    # 3. LISTA DE REVISIÓN Y RESUMEN FINAL
     if st.session_state.carrito:
         st.write("###")
-        st.markdown("<div style='background: #000; color: #fff; padding: 5px; font-weight: bold;'>PREPARACIÓN DE ENVÍO</div>", unsafe_allow_html=True)
+        st.markdown("<div style='background: #000; color: #fff; padding: 5px; font-weight: bold;'>LISTA DE REPOSICIÓN</div>", unsafe_allow_html=True)
         
         for ean, item in list(st.session_state.carrito.items()):
             st.markdown('<div class="table-row">', unsafe_allow_html=True)
@@ -169,17 +158,6 @@ if data_pack:
                     del st.session_state.carrito[ean]; st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-        st.write("###")
-        cv, cg = st.columns([1, 2])
-        if cv.button("LIMPIAR TODO"):
-            st.session_state.carrito = {}; st.rerun()
-            
-        if os.path.exists('peticion.xlsx') and cg.button("GENERAR EXCEL GEXTIA", type="primary"):
-            wb = load_workbook('peticion.xlsx')
-            ws = wb.active
-            for ean, it in st.session_state.carrito.items():
-                ws.append([fecha_str, origen, destino, obs, ean, it['Cantidad']])
-            out = io.BytesIO(); wb.save(out)
-            st.download_button("📥 DESCARGAR", out.getvalue(), f"REPO_{destino}.xlsx", use_container_width=True)
-else:
-    st.error("No se encontró el catálogo.")
+        # --- RESUMEN DE TOTALES (AL FINAL) ---
+        total_uds = sum(it['Cantidad'] for it in st.session_state.carrito.values())
+        total_refs = len(st.session_state.
