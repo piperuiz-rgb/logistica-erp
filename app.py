@@ -148,32 +148,58 @@ with tab1:
                         st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        # 4. LISTA FINAL Y GENERACIÓN
+         # 4. LISTA FINAL Y GENERACIÓN
         if st.session_state.carrito:
             st.write("---")
             st.markdown('<div class="section-header">📋 LISTA DE REPOSICIÓN</div>', unsafe_allow_html=True)
+            
             for ean, item in list(st.session_state.carrito.items()):
                 st.markdown('<div class="table-row">', unsafe_allow_html=True)
-                ca, cb, cc = st.columns([2.5, 1.2, 0.8])
-                with ca: st.markdown(f"<div class='cell-content'><strong>{item['Ref']}</strong><br><small>{item['Nom']} ({item['Col']} / {item['Tal']})</small></div>", unsafe_allow_html=True)
+                # Ajustamos anchos: 3 para info, 1 para cantidad, 0.5 para borrar
+                ca, cb, cc = st.columns([3, 1, 0.5])
+                
+                with ca: 
+                    # Aquí añadimos Nombre + Color + Talla
+                    st.markdown(f"""
+                        <div class='cell-content'>
+                            <strong>{item['Ref']}</strong><br>
+                            <small>{item['Nom']} ({item['Col']} / {item['Tal']})</small>
+                        </div>
+                    """, unsafe_allow_html=True)
+                
+                with cb: 
+                    # El selector de cantidad
+                    item['Cantidad'] = st.number_input(
+                        "Cant", 1, 9999, int(item['Cantidad']), 
+                        key=f"q_{ean}", label_visibility="collapsed"
+                    )
+                
+                with cc:
+                    # El botón de eliminar
+                    if st.button("✕", key=f"d_{ean}"): 
+                        del st.session_state.carrito[ean]
+                        st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
-
+            # --- RESUMEN Y BOTONES DE CIERRE ---
             uds = sum(it['Cantidad'] for it in st.session_state.carrito.values())
             st.markdown(f'<div class="summary-box"><div>PIEZAS: {uds}</div><div>MODELOS: {len(st.session_state.carrito)}</div><div>DESTINO: {destino}</div></div>', unsafe_allow_html=True)
 
             cv, cg = st.columns([1, 2])
-            if cv.button("LIMPIAR TODO", key="clear_all"):
+            if cv.button("LIMPIAR TODO", key="clear_all_final"):
                 st.session_state.carrito = {}
                 st.session_state.search_key += 1
                 st.rerun()
                 
-            if os.path.exists('peticion.xlsx') and cg.button("GENERAR Y DESCARGAR EXCEL", type="primary", key="gen_btn"):
+            if os.path.exists('peticion.xlsx') and cg.button("GENERAR Y DESCARGAR EXCEL", type="primary", key="gen_btn_final"):
                 wb = load_workbook('peticion.xlsx')
                 ws = wb.active
                 for ean, it in st.session_state.carrito.items():
                     ws.append([fecha_str, origen, destino, ref_peticion, ean, it['Cantidad']])
-                out = io.BytesIO(); wb.save(out)
+                out = io.BytesIO()
+                wb.save(out)
                 st.download_button("📥 GUARDAR ARCHIVO REPO", out.getvalue(), f"REPO_{destino}.xlsx", use_container_width=True)
+
     else:
         st.error("Error: Asegúrate de tener el archivo 'catalogue.xlsx' en la carpeta.")
 
