@@ -6,8 +6,8 @@ import re
 from datetime import datetime
 from openpyxl import load_workbook
 
-# --- CONFIGURACIÓN Y ESTILOS (Tus estilos originales) ---
-st.set_page_config(page_title="Peticiones RGB", layout="wide")
+# --- 1. TU DISEÑO TÉCNICO ORIGINAL (MANTENIDO AL 100%) ---
+st.set_page_config(page_title="Peticiones", layout="wide")
 
 st.markdown("""
     <style>
@@ -55,8 +55,9 @@ def get_catalogue():
     if not os.path.exists('catalogue.xlsx'): return None
     try:
         df = pd.read_excel('catalogue.xlsx', engine='openpyxl')
+        df.columns = [str(c).strip() for c in df.columns]
         df['EAN'] = df['EAN'].astype(str).str.replace('.0', '', regex=False).str.strip()
-        # Claves para el conversor
+        # Claves para el conversor (necesarias para que la pestaña 2 funcione)
         df['Ref_K'] = df['Referencia'].astype(str).str.strip().str.upper()
         df['Col_K'] = df['Color'].astype(str).str.strip().str.upper()
         df['Tal_K'] = df['Talla'].astype(str).str.strip().str.upper()
@@ -69,11 +70,11 @@ if 'search_key' not in st.session_state: st.session_state.search_key = 0
 
 df_cat = get_catalogue()
 
-# --- ESTRUCTURA DE PESTAÑAS ---
+# --- DEFINICIÓN DE PESTAÑAS ---
 tab1, tab2 = st.tabs(["🛒 GESTIÓN DE PETICIONES", "🔄 CONVERSOR GEXTIA"])
 
 # ==========================================
-# PESTAÑA 1: TU CÓDIGO ORIGINAL
+# PESTAÑA 1: TU CÓDIGO ORIGINAL ÍNTEGRO
 # ==========================================
 with tab1:
     st.markdown('<div class="peticiones-title">Peticiones</div>', unsafe_allow_html=True)
@@ -179,7 +180,7 @@ with tab1:
         st.error("Error: Asegúrate de tener el archivo 'catalogue.xlsx' en la carpeta.")
 
 # ==========================================
-# PESTAÑA 2: CONVERSOR GEXTIA (NUEVO)
+# PESTAÑA 2: CONVERSOR GEXTIA (LÓGICA MEJORADA)
 # ==========================================
 with tab2:
     st.markdown('<div class="peticiones-title">Conversor Gextia</div>', unsafe_allow_html=True)
@@ -187,30 +188,37 @@ with tab2:
     
     archivo_g = st.file_uploader("Sube el informe 'sucio' de Gextia", type=['xlsx'], key="u_conv")
     
-    if archivo_g:
+    if archivo_g and df_cat is not None:
         df_g = pd.read_excel(archivo_g)
         c_cols = st.columns(2)
-        col_txt = c_cols[0].selectbox("Columna con la descripción", df_g.columns)
-        col_can = c_cols[1].selectbox("Columna con la cantidad", df_g.columns)
+        col_txt = c_cols[0].selectbox("Columna con la descripción", df_g.columns, key="sel_txt")
+        col_can = c_cols[1].selectbox("Columna con la cantidad", df_g.columns, key="sel_can")
         
-        if st.button("PROCESAR Y LIMPIAR", type="primary"):
+        if st.button("PROCESAR Y LIMPIAR", type="primary", key="btn_conv"):
             final_rows = []
             for _, fila in df_g.iterrows():
                 texto = str(fila[col_txt])
                 cant = fila[col_can]
                 
-                # Regex para extraer [REF] y (COLOR, TALLA)
+                # Regex robusto para extraer [REFERENCIA] y (COLOR, TALLA)
                 m_ref = re.search(r'\[(.*?)\]', texto)
-                m_specs = re.search(r'\((.*?)\)', texto)
+                m_specs = re.findall(r'\((.*?)\)', texto) # Buscamos todos los paréntesis
                 
                 if m_ref and m_specs:
                     ref_v = m_ref.group(1).strip().upper()
-                    specs = m_specs.group(1).split(',')
-                    if len(specs) >= 2:
-                        col_v = specs[0].strip().upper()
-                        tal_v = specs[1].strip().upper()
+                    # Gextia suele poner los specs en el último paréntesis
+                    specs_str = m_specs[-1] 
+                    partes = specs_str.split(',')
+                    
+                    if len(partes) >= 2:
+                        col_v = partes[0].strip().upper()
+                        tal_v = partes[1].strip().upper()
                         
-                        match = df_cat[(df_cat['Ref_K'] == ref_v) & (df_cat['Col_K'] == col_v) & (df_cat['Tal_K'] == tal_v)]
+                        # Buscamos en el catálogo usando las claves normalizadas
+                        match = df_cat[(df_cat['Ref_K'] == ref_v) & 
+                                       (df_cat['Col_K'] == col_v) & 
+                                       (df_cat['Tal_K'] == tal_v)]
+                        
                         if not match.empty:
                             final_rows.append({'EAN': match.iloc[0]['EAN'], 'Cantidad': cant})
 
@@ -219,10 +227,12 @@ with tab2:
                 st.success(f"Se han identificado {len(df_res)} productos.")
                 st.dataframe(df_res, hide_index=True)
                 
-                # Descarga del archivo limpio
+                # Generar Excel de salida para descargar
                 out_c = io.BytesIO()
                 with pd.ExcelWriter(out_c, engine='openpyxl') as w:
                     df_res.to_excel(w, index=False)
                 
-                st.download_button("📥 DESCARGAR EXCEL LIMPIO", out_c.getvalue(), "repo_lista_para_subir.xlsx", use_container_width=True)
-                
+                st.download_button("📥 DESCARGAR EXCEL LIMPIO", out_c.getvalue(), "EAN_LIMPIOS_GEXTIA.xlsx", use_container_width=True)
+            else:
+                st.error("No se han podido encontrar coincidencias. Revisa si el formato del texto es [REF]...(COLOR, TALLA)")
+        
