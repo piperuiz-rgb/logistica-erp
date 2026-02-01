@@ -26,7 +26,6 @@ def cargar_catalogo():
     if os.path.exists(fichero):
         df = pd.read_excel(fichero, engine='openpyxl')
         df.columns = df.columns.str.strip()
-        # Limpieza de EAN para evitar formatos científicos
         if 'EAN' in df.columns:
             df['EAN'] = df['EAN'].astype(str).str.replace('.0', '', regex=False).str.strip()
         return df
@@ -41,7 +40,7 @@ st.title("📦 LOGIFLOW PRO")
 st.write("---")
 
 if df_cat is not None:
-    # 1. CABECERA
+    # 1. CABECERA Y VALIDACIÓN
     with st.container():
         fecha_peticion = st.date_input("FECHA", datetime.now())
         fecha_str = fecha_peticion.strftime('%Y-%m-%d')
@@ -52,6 +51,11 @@ if df_cat is not None:
         lista_almacenes = ["PET Almacén Badalona", "PET T002 Marbella", "ALM-CENTRAL", "ALM-TIENDA"]
         origen = col_o.selectbox("ALMACÉN ORIGEN", lista_almacenes)
         destino = col_d.selectbox("ALMACÉN DESTINO", lista_almacenes)
+
+    # --- AVISO DE SEGURIDAD (BLOQUEO) ---
+    if origen == destino:
+        st.error(f"⚠️ **ERROR DE CONFIGURACIÓN**: El almacén de ORIGEN y DESTINO no pueden ser iguales ({origen}). Por favor, cambia uno de los dos para continuar.")
+        st.stop() # Detiene la ejecución del resto de la app
 
     st.write("###")
 
@@ -77,13 +81,11 @@ if df_cat is not None:
             st.rerun()
 
     with t2:
-        busq = st.text_input("Referencia, Nombre, Color o Talla")
+        busq = st.text_input("Buscar por Referencia, Nombre, Color o Talla")
         if busq:
-            # Búsqueda en todas las columnas
             res = df_cat[df_cat.apply(lambda row: row.astype(str).str.contains(busq, case=False).any(), axis=1)]
             for _, f in res.iterrows():
                 c1, c2 = st.columns([4, 1.2])
-                # RESULTADO CON NOMBRE INCLUIDO
                 c1.markdown(f"""
                     **{f['Referencia']}** - <span class='product-name'>{f.get('Nombre', '')}</span><br>
                     <span class='tag-style'>{f.get('Color','-')}</span> <span class='tag-style'>{f.get('Talla','-')}</span>
@@ -132,11 +134,20 @@ if df_cat is not None:
             wb.save(output)
             
             st.write("###")
-            if st.download_button("📥 DESCARGAR PARA GEXTIA", data=output.getvalue(), 
-                                   file_name=f"REPO_{destino}.xlsx", use_container_width=True, type="primary"):
-                st.session_state.carrito = [] # Limpiar tras descargar
+            c_v, c_d = st.columns([1, 2])
+            if c_v.button("VACIAR LISTA", use_container_width=True):
+                st.session_state.carrito = []
+                st.rerun()
+                
+            c_d.download_button(
+                label="📥 DESCARGAR PARA GEXTIA",
+                data=output.getvalue(),
+                file_name=f"REPO_{destino}.xlsx",
+                use_container_width=True,
+                type="primary"
+            )
         else:
-            st.error("⚠️ Falta 'peticion.xlsx'")
+            st.error("⚠️ No se encontró 'peticion.xlsx'")
 else:
-    st.error("⚠️ Sube 'catalogue.xlsx' a GitHub")
-        
+    st.error("⚠️ No se encuentra 'catalogue.xlsx' en GitHub.")
+    
