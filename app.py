@@ -7,7 +7,7 @@ from openpyxl import load_workbook
 
 st.set_page_config(page_title="Peticiones", layout="wide")
 
-# --- CSS DEFINITIVO ---
+# --- CSS DEFINITIVO: MÁXIMO CONTRASTE ---
 st.markdown("""
     <style>
     html, body, .stApp, .main, .block-container, 
@@ -57,7 +57,7 @@ df_cat = get_catalogue()
 st.markdown('<div class="peticiones-title">Peticiones</div>', unsafe_allow_html=True)
 
 if df_cat is not None:
-    # 1. CONFIGURACIÓN
+    # 1. CONFIGURACIÓN GENERAL
     c1, c2, c3 = st.columns(3)
     fecha_str = c1.date_input("FECHA", datetime.now()).strftime('%Y-%m-%d')
     origen = c2.selectbox("ORIGEN", ["PET Almacén Badalona", "ALM-CENTRAL"])
@@ -66,14 +66,38 @@ if df_cat is not None:
 
     st.write("---")
 
-    # 2. FILTROS Y LÍMITE DE BÚSQUEDA
-    with st.container():
-        st.write("### 🔍 FILTROS")
-        f1, f2 = st.columns([2, 1])
-        busq_txt = f1.text_input("Buscar por Referencia, Nombre o EAN")
-        limite = f2.selectbox("Mostrar resultados:", [10, 25, 50, 100, 500], index=1)
+    # 2. SECCIÓN DE CARGA Y BÚSQUEDA
+    with st.expander("📥 CARGAR REPOSICIÓN POR EXCEL / VENTAS", expanded=False):
+        archivo_v = st.file_uploader("Arrastra aquí tu Excel de ventas (Columna EAN y Cantidad)", type=['xlsx'])
+        if archivo_v and st.button("IMPORTAR DATOS", type="primary"):
+            df_v = pd.read_excel(archivo_v)
+            count = 0
+            for _, f_v in df_v.iterrows():
+                ean_v = str(f_v['EAN']).replace('.0', '').strip()
+                cant_v = int(f_v.get('Cantidad', 1))
+                # Buscar en catálogo
+                match = df_cat[df_cat['EAN'] == ean_v]
+                if not match.empty:
+                    prod = match.iloc[0]
+                    if ean_v in st.session_state.carrito:
+                        st.session_state.carrito[ean_v]['Cantidad'] += cant_v
+                    else:
+                        st.session_state.carrito[ean_v] = {
+                            'Ref': prod['Referencia'], 'Nom': prod.get('Nombre',''), 
+                            'Col': prod.get('Color','-'), 'Tal': prod.get('Talla','-'), 
+                            'Cantidad': cant_v
+                        }
+                    count += 1
+            st.success(f"Se han cargado {count} referencias correctamente.")
+            st.rerun()
 
-        # Filtros adicionales dinámicos
+    with st.container():
+        st.write("### 🔍 BUSCADOR MANUAL")
+        f1, f2 = st.columns([2, 1])
+        busq_txt = f1.text_input("Escribe Referencia, Nombre o EAN...")
+        limite = f2.selectbox("Resultados visibles:", [10, 25, 50, 100, 500], index=1)
+
+        # Filtros adicionales si existen columnas en el catálogo
         filtros_activos = {}
         cols_opcionales = ["Colección", "Categoría", "Familia"]
         columnas_reales = [c for c in cols_opcionales if c in df_cat.columns]
@@ -84,7 +108,7 @@ if df_cat is not None:
                 opciones = ["TODOS"] + sorted(df_cat[col].dropna().unique().tolist())
                 filtros_activos[col] = cols_f[i].selectbox(f"Filtrar por {col}", opciones)
 
-    # Lógica de Filtrado
+    # Lógica de Filtrado Manual
     df_res = df_cat.copy()
     if busq_txt:
         df_res = df_res[df_res.apply(lambda row: busq_txt.lower() in str(row.values).lower(), axis=1)]
@@ -92,30 +116,29 @@ if df_cat is not None:
         if val != "TODOS":
             df_res = df_res[df_res[col] == val]
 
-    # 3. TABLA DE RESULTADOS
-    st.markdown(f"<div style='background: #000; color: #fff; padding: 5px; font-size: 0.75rem; text-align: center; margin-top: 10px;'>{len(df_res)} ENCONTRADOS (MOSTRANDO MÁX. {limite})</div>", unsafe_allow_html=True)
-    
-    # Aplicar el límite de búsqueda aquí
-    for _, f in df_res.head(limite).iterrows():
-        ean = f['EAN']
-        en_car = ean in st.session_state.carrito
-        st.markdown('<div class="table-row">', unsafe_allow_html=True)
-        c1, c2 = st.columns([3, 1.5]) 
-        with c1:
-            st.markdown(f"""<div class='cell-content'>
-                <span style='font-weight: 800;'>{f['Referencia']}</span>
-                <span style='font-size: 0.8rem;'>{f.get('Nombre','')}</span>
-                <span style='font-size: 0.7rem;'>{f.get('Color','-')} / {f.get('Talla','-')}</span>
-            </div>""", unsafe_allow_html=True)
-        with c2:
-            label = f"OK ({st.session_state.carrito[ean]['Cantidad']})" if en_car else "AÑADIR"
-            if st.button(label, key=f"b_{ean}", type="primary" if en_car else "secondary"):
-                if en_car: st.session_state.carrito[ean]['Cantidad'] += 1
-                else: st.session_state.carrito[ean] = {'Ref': f['Referencia'], 'Nom': f.get('Nombre',''), 'Col': f.get('Color','-'), 'Tal': f.get('Talla','-'), 'Cantidad': 1}
-                st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+    # 3. MUESTRA DE CATÁLOGO (Solo si se busca algo)
+    if busq_txt or any(v != "TODOS" for v in filtros_activos.values()):
+        st.markdown(f"<div style='background: #000; color: #fff; padding: 5px; font-size: 0.75rem; text-align: center; margin-top: 10px;'>{len(df_res)} ENCONTRADOS (MOSTRANDO {min(len(df_res), limite)})</div>", unsafe_allow_html=True)
+        
+        for _, f in df_res.head(limite).iterrows():
+            ean = f['EAN']
+            en_car = ean in st.session_state.carrito
+            st.markdown('<div class="table-row">', unsafe_allow_html=True)
+            c1, c2 = st.columns([3, 1.5]) 
+            with c1:
+                st.markdown(f"""<div class='cell-content'>
+                    <span style='font-weight: 800;'>{f['Referencia']}</span>
+                    <span style='font-size: 0.8rem;'>{f.get('Nombre','')} / {f.get('Color','-')} / {f.get('Talla','-')}</span>
+                </div>""", unsafe_allow_html=True)
+            with c2:
+                label = f"OK ({st.session_state.carrito[ean]['Cantidad']})" if en_car else "AÑADIR"
+                if st.button(label, key=f"b_{ean}", type="primary" if en_car else "secondary"):
+                    if en_car: st.session_state.carrito[ean]['Cantidad'] += 1
+                    else: st.session_state.carrito[ean] = {'Ref': f['Referencia'], 'Nom': f.get('Nombre',''), 'Col': f.get('Color','-'), 'Tal': f.get('Talla','-'), 'Cantidad': 1}
+                    st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
-    # 4. RESUMEN Y LISTA FINAL
+    # 4. LISTA DE REPOSICIÓN Y RESUMEN FINAL (Siempre visible si hay productos)
     if st.session_state.carrito:
         st.write("---")
         st.markdown("<div style='background: #000; color: #fff; padding: 5px; font-weight: bold;'>LISTA DE REPOSICIÓN</div>", unsafe_allow_html=True)
@@ -143,6 +166,6 @@ if df_cat is not None:
             for ean, it in st.session_state.carrito.items():
                 ws.append([fecha_str, origen, destino, ref_peticion, ean, it['Cantidad']])
             out = io.BytesIO(); wb.save(out)
-            st.download_button("📥 DESCARGAR EXCEL REPOSICIÓN", out.getvalue(), f"REPO_{destino}.xlsx", use_container_width=True)
+            st.download_button("📥 DESCARGAR EXCEL FINAL", out.getvalue(), f"REPO_{destino}.xlsx", use_container_width=True)
 else:
-    st.error("No se encontró el archivo 'catalogue.xlsx'.")
+    st.error("No se encontró 'catalogue.xlsx'.")
