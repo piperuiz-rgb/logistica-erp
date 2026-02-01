@@ -7,10 +7,10 @@ from openpyxl import load_workbook
 
 st.set_page_config(page_title="Peticiones", layout="wide")
 
-# --- CSS HÍBRIDO: FUERZA BLANCO EN PC Y ADAPTABILIDAD EN MÓVIL ---
+# --- CSS DEFINITIVO: TÍTULO FLUIDO Y ADAPTABILIDAD ---
 st.markdown("""
     <style>
-    /* 1. RESET DE COLOR Y FONDO (Nuclear White) */
+    /* 1. RESET DE COLOR Y FONDO */
     html, body, .stApp, .main, .block-container, 
     div[data-testid="stExpander"], div[data-testid="stTab"], 
     div[data-testid="stHeader"], .stTabs, [data-testid="stVerticalBlock"] {
@@ -18,8 +18,17 @@ st.markdown("""
         color: #000000 !important;
     }
 
-    /* 2. TEXTO Y TABLA */
-    h1, h2, h3, p, span, label, li, .stMarkdown, div {
+    /* 2. AJUSTE TÍTULO "PETICIONES" (Para que no se corte) */
+    h1 {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1rem !important;
+        line-height: 1.2 !important;
+        font-weight: 800 !important;
+        color: #000000 !important;
+    }
+
+    /* 3. TEXTO Y TABLA TÉCNICA */
+    h2, h3, p, span, label, li, .stMarkdown, div {
         color: #000000 !important;
     }
     .table-row {
@@ -37,21 +46,20 @@ st.markdown("""
         justify-content: center;
     }
 
-    /* 3. BOTONES (Adaptables) */
+    /* 4. BOTONES */
     .stButton>button {
         width: 100% !important;
         border-radius: 0px !important;
         font-weight: 700 !important;
-        height: 42px;
+        height: 40px;
         text-transform: uppercase;
         border: 1px solid #000000 !important;
         font-size: 0.7rem !important;
-        padding: 0px 2px !important;
     }
     .stButton>button[kind="secondary"] { background-color: #ffffff !important; color: #000000 !important; }
     .stButton>button[kind="primary"] { background-color: #0052FF !important; color: #ffffff !important; border: none !important; }
 
-    /* 4. RESUMEN FINAL */
+    /* 5. RESUMEN FINAL */
     .summary-box {
         border: 2px solid #000000;
         padding: 15px;
@@ -63,13 +71,12 @@ st.markdown("""
         color: #000000 !important;
     }
 
-    /* 5. AJUSTES ESPECÍFICOS PARA MÓVIL (Pantallas < 600px) */
+    /* 6. MÓVIL (Pantallas < 600px) */
     @media (max-width: 600px) {
-        .block-container { padding: 10px !important; }
+        .block-container { padding: 5px 10px !important; }
+        h1 { font-size: 2rem !important; padding-top: 1rem !important; }
         .summary-box { flex-direction: column; gap: 5px; }
-        .stButton>button { font-size: 0.8rem !important; height: 50px; } /* Botón más grande para dedos */
-        .cell-content { padding: 5px; }
-        h1 { font-size: 1.5rem !important; }
+        .stButton>button { font-size: 0.75rem !important; height: 48px; }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -130,7 +137,7 @@ if data_pack:
                 ean = f['EAN']
                 en_car = ean in st.session_state.carrito
                 st.markdown('<div class="table-row">', unsafe_allow_html=True)
-                c1, c2 = st.columns([3, 1.5]) # Ajuste de proporción para móvil
+                c1, c2 = st.columns([3, 1.5]) 
                 with c1:
                     st.markdown(f"""<div class='cell-content'>
                         <span style='font-weight: 800;'>{f['Referencia']}</span>
@@ -178,7 +185,7 @@ if data_pack:
             for ean, it in st.session_state.carrito.items():
                 ws.append([fecha_str, origen, destino, ref_peticion, ean, it['Cantidad']])
             out = io.BytesIO(); wb.save(out)
-            st.download_button("CLIC PARA GUARDAR EXCEL", out.getvalue(), f"REPO_{destino}.xlsx", use_container_width=True)
+            st.download_button("CLIC PARA DESCARGAR EXCEL", out.getvalue(), f"REPO_{destino}.xlsx", use_container_width=True)
 else:
     st.error("Archivo catálogo no encontrado.")
-    
+                
