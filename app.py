@@ -54,7 +54,7 @@ if data_pack:
 
     with t1:
         archivo_v = st.file_uploader("Sube Reposición", type=['xlsx'], key="uploader")
-        if archivo_v and st.button("PROCESAR EXCEL", type="primary"):
+        if archivo_v and st.button("PROCESAR REPOSICIÓN", type="primary"):
             df_v = pd.read_excel(archivo_v)
             df_v.columns = df_v.columns.str.strip()
             for _, f_v in df_v.iterrows():
