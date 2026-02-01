@@ -30,7 +30,7 @@ if 'carrito' not in st.session_state: st.session_state.carrito = {}
 
 data_pack = get_catalogue()
 
-st.title("📦 LOGIFLOW PRO")
+st.title("Peticiones")
 
 if data_pack:
     df_cat, cat_dict = data_pack
