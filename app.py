@@ -74,7 +74,7 @@ df_cat = get_catalogue()
 tab1, tab2 = st.tabs(["🛒 GESTIÓN DE PETICIONES", "🔄 CONVERSOR GEXTIA"])
 
 # ==========================================
-# PESTAÑA 1: PETICIONES
+# PESTAÑA 1: PETICIONES (MANTENIDA)
 # ==========================================
 with tab1:
     st.markdown('<div class="peticiones-title">Peticiones</div>', unsafe_allow_html=True)
@@ -175,11 +175,11 @@ with tab1:
         st.error("Error: catalogue.xlsx no encontrado.")
 
 # ==========================================
-# PESTAÑA 2: CONVERSOR GEXTIA
+# PESTAÑA 2: CONVERSOR GEXTIA (CORREGIDA)
 # ==========================================
 with tab2:
     st.markdown('<div class="peticiones-title">Conversor Gextia</div>', unsafe_allow_html=True)
-    st.info("Sube el Excel con el formato de texto largo para convertirlo en una lista de EAN limpia.")
+    st.info("Sube el Excel con el formato de texto largo para obtener una lista de EANs limpia.")
     
     archivo_conv = st.file_uploader("Sube el Excel sucio", type=['xlsx'], key="u_conversor")
     
@@ -201,10 +201,15 @@ with tab2:
                 return None
 
             df_v_sucio['LLAVE'] = df_v_sucio[col_sucio].apply(extraer_llave)
+            
+            # Unimos con el catálogo
             res = pd.merge(df_v_sucio, df_cat[['KEY_MASTER', 'EAN']], left_on='LLAVE', right_on='KEY_MASTER', how='inner')
 
             if not res.empty:
+                # Aquí está el truco: tras el merge, el EAN real del catálogo se llama 'EAN'
+                # Seleccionamos y renombramos cantidad
                 df_final = res[['EAN', col_cant]].rename(columns={col_cant: 'Cantidad'})
+                
                 st.success(f"✅ Se han convertido {len(df_final)} líneas.")
                 
                 out_c = io.BytesIO()
@@ -213,5 +218,5 @@ with tab2:
                 
                 st.download_button("📥 DESCARGAR EAN LIMPIOS", out_c.getvalue(), "ean_limpios.xlsx", use_container_width=True)
             else:
-                st.error("No se encontraron coincidencias. Revisa el catálogo.")
-                
+                st.error("No se encontraron coincidencias. Revisa que el formato sea [REF]...(COLOR, TALLA)")
+                                                               
