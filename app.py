@@ -84,8 +84,8 @@ with tab1:
         # 1. CABECERA LOGÍSTICA
         c1, c2, c3 = st.columns(3)
         fecha_str = c1.date_input("FECHA", datetime.now()).strftime('%Y-%m-%d')
-        origen = c2.selectbox("ORIGEN", ["PET Almacén Badalona", "PET Almacén Ibiza", "PET T001Ibiza", "PET T002 Marbella", "PET T004 Madrid"])
-        destino = c3.selectbox("DESTINO", ["PET Almacén Badalona", "PET Almacén Ibiza", "PET T001Ibiza", "PET T002 Marbella", "PET T004 Madrid"])
+        origen = c2.selectbox("ORIGEN", ["PET Almacén Badalona", "PET Almacén Ibiza", "PET T001Ibiza", "PET T002 Marbella", "PET T004 Madrid", "PET Almacén Portugal"])
+        destino = c3.selectbox("DESTINO", ["PET Almacén Badalona", "PET Almacén Ibiza", "PET T001Ibiza", "PET T002 Marbella", "PET T004 Madrid", "PET Almacén Portugal"])
         ref_peticion = st.text_input("REFERENCIA PETICIÓN")
 
         st.write("---")
