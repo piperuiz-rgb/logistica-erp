@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import io
 import json
+import re
 from datetime import datetime
 from openpyxl import load_workbook
 from streamlit_local_storage import LocalStorage
@@ -15,18 +16,10 @@ st.set_page_config(page_title="Peticiones", layout="wide")
 LS_KEY = "peticiones_estado_v1"
 localS = LocalStorage()
 
-
 # =========================================
 # LOCAL STORAGE (compatibilidad entre firmas)
 # =========================================
 def ls_get(item_key: str, ss_key: str):
-    """
-    Compatible con distintas firmas de streamlit-local-storage:
-      - getItem(itemKey, key="ss_key")
-      - getItem(itemKey, ss_key)
-      - getItem(itemKey) -> devuelve valor
-    Devuelve string o None.
-    """
     try:
         out = localS.getItem(item_key, key=ss_key)
         if ss_key in st.session_state and st.session_state[ss_key]:
@@ -52,7 +45,6 @@ def ls_get(item_key: str, ss_key: str):
 def ls_set(item_key: str, value: str) -> None:
     localS.setItem(item_key, value)
 
-
 # =========================================
 # STATE HELPERS
 # =========================================
@@ -77,7 +69,6 @@ def _apply_state(payload: dict) -> None:
 
 def mark_dirty() -> None:
     st.session_state["_dirty"] = True
-
 
 # =========================================
 # STYLE (tu CSS)
@@ -126,7 +117,6 @@ div[data-testid="stHeader"], .stTabs, [data-testid="stVerticalBlock"] {
     unsafe_allow_html=True,
 )
 
-
 # =========================================
 # DATA HELPERS
 # =========================================
@@ -160,7 +150,7 @@ def _clean_ean(x) -> str:
     return s.strip()
 
 
-def _safe_int(x, default=1) -> int:
+def _safe_int(x, default=0) -> int:
     try:
         if pd.isna(x):
             return default
@@ -170,17 +160,42 @@ def _safe_int(x, default=1) -> int:
 
 
 def read_excel_any(uploaded_file):
-    """
-    Lee xlsx/xls con fallback:
-    - intenta openpyxl (xlsx)
-    - si falla, intenta xlrd (xls) si está instalado
-    """
     try:
         return pd.read_excel(uploaded_file, engine="openpyxl")
     except Exception:
-        # xlrd solo funciona con .xls, y debe estar instalado
         return pd.read_excel(uploaded_file, engine="xlrd")
 
+
+def parse_producto_linea(s: str):
+    """
+    Espera strings tipo:
+      [262200] Blusa Elyr (Blanco Lagoon, XS)
+    Devuelve (ref, color, talla) o (None, None, None)
+    """
+    if not isinstance(s, str):
+        return None, None, None
+    s = s.strip()
+
+    m = re.search(r"\[(.*?)\]", s)
+    if not m:
+        return None, None, None
+    ref = m.group(1).strip()
+
+    pm = re.search(r"\((.*)\)\s*$", s)
+    if not pm:
+        return ref, None, None
+
+    inside = pm.group(1).strip()
+    if "," in inside:
+        color, talla = inside.rsplit(",", 1)
+        return ref, color.strip(), talla.strip()
+    return ref, inside.strip(), ""
+
+
+def norm_txt(x) -> str:
+    if x is None:
+        return ""
+    return str(x).strip().casefold()
 
 # =========================================
 # LOAD CATALOGUE
@@ -232,7 +247,6 @@ def load_catalogue(path="catalogue.xlsx"):
     except Exception as e:
         return None, f"Error leyendo catálogo: {e}"
 
-
 # =========================================
 # SESSION STATE INIT
 # =========================================
@@ -246,7 +260,6 @@ st.session_state.setdefault("destino", "PET T002 Marbella")
 st.session_state.setdefault("ref_peticion", "")
 st.session_state.setdefault("fecha_str", datetime.now().strftime("%Y-%m-%d"))
 
-
 # =========================================
 # HYDRATE ONCE
 # =========================================
@@ -258,7 +271,6 @@ if not st.session_state._hydrated:
         except Exception:
             pass
     st.session_state._hydrated = True
-
 
 # =========================================
 # UI
@@ -294,14 +306,14 @@ ref_peticion = st.session_state.ref_peticion
 st.write("---")
 
 # =========================================
-# 2) IMPORTADOR MASIVO (nuevo)
+# 2) IMPORTADOR MASIVO (A=producto, B o C = cantidad)
 # =========================================
 st.markdown('<div class="section-header">📂 IMPORTACIÓN DE VENTAS / REPOSICIÓN</div>', unsafe_allow_html=True)
 
 u1, u2 = st.columns([3, 1])
 
 archivo_v = u1.file_uploader(
-    "Sube Excel con columnas EAN y Cantidad (xlsx o xls)",
+    "Sube Excel TPV (A=Producto, Cantidad en B o C) - xlsx/xls",
     type=["xlsx", "xls"],
     key="upload_excel",
     label_visibility="visible",
@@ -310,70 +322,107 @@ archivo_v = u1.file_uploader(
 if archivo_v is not None:
     st.info(f"Archivo cargado: **{archivo_v.name}**")
 
-inject = u2.button(
-    "INJECTAR AL CARRITO",
-    type="primary",
-    disabled=(archivo_v is None),
-)
+inject = u2.button("INJECTAR AL CARRITO", type="primary", disabled=(archivo_v is None))
 
 if inject:
     try:
         df_v = read_excel_any(archivo_v)
-        df_v = _norm_cols(df_v)
 
-        ean_col = _find_col(df_v, ["EAN", "Ean", "codigo ean", "código ean", "ean code"])
-        qty_col = _find_col(df_v, ["Cantidad", "cantidad", "qty", "quantity", "unidades", "uds"])
+        if df_v.shape[1] < 2:
+            st.error("El Excel debe tener al menos 2 columnas: A=Producto y B=Cantidad (o C=Cantidad).")
+            st.stop()
 
-        if not ean_col:
-            st.error(f"No encuentro columna EAN en el Excel. Columnas detectadas: {list(df_v.columns)}")
-        else:
-            if not qty_col:
-                st.warning("No encuentro columna de Cantidad. Usaré 1 por fila.")
+        prod_series = df_v.iloc[:, 0].astype(str)
 
-            añadidas = 0
-            no_en_catalogo = 0
+        # Cantidad: si hay columna C (índice 2) con algún valor numérico >0, usar C; si no, usar B
+        qty_b = pd.to_numeric(df_v.iloc[:, 1], errors="coerce")
+        qty_c = None
+        use_c = False
 
-            for _, r in df_v.iterrows():
-                ean_v = _clean_ean(r.get(ean_col))
-                if not ean_v:
-                    continue
+        if df_v.shape[1] >= 3:
+            qty_c = pd.to_numeric(df_v.iloc[:, 2], errors="coerce")
+            if qty_c.notna().any() and (qty_c.fillna(0) > 0).any():
+                use_c = True
 
-                cant_v = _safe_int(r.get(qty_col), default=1) if qty_col else 1
-                if cant_v <= 0:
-                    continue
+        qty_series = qty_c if use_c else qty_b
+        qty_series = qty_series.fillna(0).astype(int)
 
-                match = df_cat[df_cat["EAN"] == ean_v]
-                if match.empty:
-                    no_en_catalogo += 1
-                    continue
+        work = pd.DataFrame({"prod_raw": prod_series, "qty": qty_series})
+        work["prod_raw"] = work["prod_raw"].astype(str).str.strip()
 
-                prod = match.iloc[0]
-                if ean_v in st.session_state.carrito:
-                    st.session_state.carrito[ean_v]["Cantidad"] += cant_v
-                else:
-                    st.session_state.carrito[ean_v] = {
-                        "Ref": prod.get("Referencia", ""),
-                        "Nom": prod.get("Nombre", ""),
-                        "Col": prod.get("Color", "-"),
-                        "Tal": prod.get("Talla", "-"),
-                        "Cantidad": cant_v,
-                    }
+        # Filtrar solo qty > 0
+        work = work[work["qty"] > 0].copy()
 
-                añadidas += 1
+        # Filtrar filas que parezcan productos reales
+        mask = work["prod_raw"].str.contains(r"\[.*?\].*\(.*\)", regex=True, na=False)
+        work = work[mask].copy()
 
-            st.success(
-                f"Importación OK ✅ Líneas añadidas/actualizadas: {añadidas} | No encontradas en catálogo: {no_en_catalogo}"
-            )
-            mark_dirty()
-            st.rerun()
+        if work.empty:
+            st.warning("No he encontrado filas válidas en A (formato: [REF] ... (Color, Talla)) con cantidad > 0.")
+            st.stop()
+
+        # Parsear a ref/color/talla
+        parsed = work["prod_raw"].apply(parse_producto_linea)
+        work["ref_imp"] = parsed.apply(lambda t: t[0])
+        work["color_imp"] = parsed.apply(lambda t: t[1])
+        work["talla_imp"] = parsed.apply(lambda t: t[2])
+
+        # Normalizar catálogo para cruce
+        cat = df_cat.copy()
+        cat["ref_n"] = cat["Referencia"].apply(norm_txt)
+        cat["color_n"] = cat["Color"].apply(norm_txt)
+        cat["talla_n"] = cat["Talla"].apply(norm_txt)
+
+        work["ref_n"] = work["ref_imp"].apply(norm_txt)
+        work["color_n"] = work["color_imp"].apply(norm_txt)
+        work["talla_n"] = work["talla_imp"].apply(norm_txt)
+
+        merged = work.merge(
+            cat[["EAN", "Referencia", "Nombre", "Color", "Talla", "ref_n", "color_n", "talla_n"]],
+            how="left",
+            on=["ref_n", "color_n", "talla_n"],
+        )
+
+        # Añadir al carrito las que sí crucen
+        añadidas = 0
+        for _, r in merged.iterrows():
+            if pd.isna(r["EAN"]):
+                continue
+            ean = str(r["EAN"]).strip()
+            qty = int(r["qty"])
+
+            if ean in st.session_state.carrito:
+                st.session_state.carrito[ean]["Cantidad"] += qty
+            else:
+                st.session_state.carrito[ean] = {
+                    "Ref": r.get("Referencia", ""),
+                    "Nom": r.get("Nombre", ""),
+                    "Col": r.get("Color", "-"),
+                    "Tal": r.get("Talla", "-"),
+                    "Cantidad": qty,
+                }
+            añadidas += 1
+
+        no_match = int(merged["EAN"].isna().sum())
+
+        if añadidas > 0:
+            st.success(f"Importación OK ✅ Líneas añadidas/actualizadas: {añadidas}")
+
+        if no_match > 0:
+            st.warning(f"Atención: {no_match} líneas no se han podido cruzar con el catálogo (no se han añadido).")
+            with st.expander("Ver líneas NO encontradas (para ajustar Color/Talla)", expanded=False):
+                st.dataframe(
+                    merged[merged["EAN"].isna()][["prod_raw", "qty", "ref_imp", "color_imp", "talla_imp"]].head(300),
+                    use_container_width=True,
+                )
+
+        mark_dirty()
+        st.rerun()
 
     except ImportError:
-        st.error(
-            "Para leer archivos .xls necesitas añadir 'xlrd' al requirements.txt. "
-            "O convierte el archivo a .xlsx."
-        )
+        st.error("Para leer .xls necesitas `xlrd==2.0.1` en requirements.txt (o convierte a .xlsx).")
     except Exception as e:
-        st.error(f"No he podido leer el Excel subido: {e}")
+        st.error(f"No he podido importar el Excel: {e}")
 
 st.write("---")
 
@@ -529,6 +578,4 @@ if st.session_state._dirty:
     try:
         payload = _serialize_state()
         ls_set(LS_KEY, json.dumps(payload))
-        st.session_state._dirty = False
-    except Exception:
-        st.session_state._dirty = False
+        st.session_s
