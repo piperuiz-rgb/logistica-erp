@@ -758,17 +758,21 @@ if st.session_state.carrito:
         st.session_state._dirty = False
         st.rerun()
 
- confirmacion_almacenes = cg.checkbox(
+ # ----------------------------------
+    # CONFIRMACIÓN DE ALMACENES
+    # ----------------------------------
+    confirmacion_almacenes = cg.checkbox(
         "Confirmo que los almacenes de ORIGEN y DESTINO son correctos"
     )
 
-    # --- Inicializamos el buffer de salida en el estado (para que no se pierda en reruns) ---
+    # ----------------------------------
+    # GENERACIÓN Y DESCARGA EXCEL
+    # ----------------------------------
     if "repo_out_bytes" not in st.session_state:
         st.session_state.repo_out_bytes = None
     if "repo_out_name" not in st.session_state:
         st.session_state.repo_out_name = None
 
-    # --- Botón que GENERA el Excel ---
     if cg.button("GENERAR EXCEL", type="primary"):
         if bloqueo_almacen:
             st.stop()
@@ -798,19 +802,18 @@ if st.session_state.carrito:
 
             st.session_state.repo_out_bytes = out.getvalue()
             st.session_state.repo_out_name = f"REPO_{destino}.xlsx"
-            st.success("✅ Excel generado. Pulsa el botón de descarga.")
+            st.success("✅ Excel generado correctamente")
 
         except Exception as e:
             st.session_state.repo_out_bytes = None
             st.session_state.repo_out_name = None
             st.error(f"No he podido generar el Excel: {e}")
 
-    # --- Botón real de DESCARGA (solo aparece si ya se generó el Excel) ---
     if st.session_state.repo_out_bytes:
         st.download_button(
             "📥 GUARDAR ARCHIVO REPO",
             data=st.session_state.repo_out_bytes,
-            file_name=st.session_state.repo_out_name or f"REPO_{destino}.xlsx",
+            file_name=st.session_state.repo_out_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
