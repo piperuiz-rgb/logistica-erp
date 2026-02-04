@@ -197,14 +197,13 @@ st.session_state.setdefault("fecha_str", datetime.now().strftime("%Y-%m-%d"))
 #  HIDRATAR DESDE LOCAL STORAGE (1 vez)
 # =========================
 if not st.session_state._hydrated:
-    localS.getItem(LS_KEY, key="__ls_payload")
-    if st.session_state.get("__ls_payload"):
-        try:
-            payload = json.loads(st.session_state["__ls_payload"])
-            _apply_state(payload)
-        except Exception:
-            pass
-    st.session_state._hydrated = True
+    val = localS.getItem(LS_KEY)  # devuelve el string guardado o None
+if val:
+    try:
+        payload = json.loads(val)
+        _apply_state(payload)
+    except Exception:
+        pass
 
 # =========================
 #  UI
