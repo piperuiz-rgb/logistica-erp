@@ -452,7 +452,7 @@ archivo_v = u1.file_uploader(
 if archivo_v is not None:
     st.info(f"Archivo cargado: **{archivo_v.name}**")
 
-inject = u2.button("INJECTAR AL CARRITO", type="primary", disabled=(archivo_v is None))
+inject = u2.button("Cargar prendas a reponer", type="primary", disabled=(archivo_v is None))
 
 if inject:
     try:
