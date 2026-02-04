@@ -19,25 +19,22 @@ localS = LocalStorage()
 # =========================================
 # LOCAL STORAGE (compatibilidad entre firmas)
 # =========================================
-def ls_get(item_key: str, ss_key: str) -> str | None:
+def ls_get(item_key: str, ss_key: str):
     """
-    Hace get del LocalStorage de forma compatible con varias firmas:
-      - getItem(itemKey, key="ss_key")  (keyword)
-      - getItem(itemKey, ss_key)        (2 posicionales)
+    Compatible con distintas firmas de streamlit-local-storage:
+      - getItem(itemKey, key="ss_key")
+      - getItem(itemKey, ss_key)
       - getItem(itemKey) -> devuelve valor
-    Devuelve siempre el string recuperado (o None).
+    Devuelve string o None.
     """
-    # 1) Firma con keyword "key="
     try:
         out = localS.getItem(item_key, key=ss_key)
-        # algunas versiones devuelven None pero escriben en session_state
         if ss_key in st.session_state and st.session_state[ss_key]:
             return st.session_state[ss_key]
         return out
     except TypeError:
         pass
 
-    # 2) Firma con 2 posicionales
     try:
         out = localS.getItem(item_key, ss_key)
         if ss_key in st.session_state and st.session_state[ss_key]:
@@ -46,7 +43,6 @@ def ls_get(item_key: str, ss_key: str) -> str | None:
     except TypeError:
         pass
 
-    # 3) Firma que devuelve directamente
     try:
         return localS.getItem(item_key)
     except TypeError:
@@ -73,17 +69,10 @@ def _serialize_state() -> dict:
 def _apply_state(payload: dict) -> None:
     if not isinstance(payload, dict):
         return
-
     st.session_state.carrito = payload.get("carrito", {}) or {}
-
-    if payload.get("origen") is not None:
-        st.session_state.origen = payload["origen"]
-    if payload.get("destino") is not None:
-        st.session_state.destino = payload["destino"]
-    if payload.get("ref_peticion") is not None:
-        st.session_state.ref_peticion = payload["ref_peticion"]
-    if payload.get("fecha_str") is not None:
-        st.session_state.fecha_str = payload["fecha_str"]
+    for k in ("origen", "destino", "ref_peticion", "fecha_str"):
+        if payload.get(k) is not None:
+            st.session_state[k] = payload[k]
 
 
 def mark_dirty() -> None:
@@ -137,8 +126,9 @@ div[data-testid="stHeader"], .stTabs, [data-testid="stVerticalBlock"] {
     unsafe_allow_html=True,
 )
 
+
 # =========================================
-# DATA HELPERS (robusto con columnas)
+# DATA HELPERS
 # =========================================
 def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -146,12 +136,11 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
+def _find_col(df: pd.DataFrame, candidates: list[str]):
     low_map = {c.lower(): c for c in df.columns}
     for cand in candidates:
         if cand.lower() in low_map:
             return low_map[cand.lower()]
-    # fallback por "contiene"
     for c in df.columns:
         cl = c.lower()
         for cand in candidates:
@@ -180,11 +169,24 @@ def _safe_int(x, default=1) -> int:
         return default
 
 
+def read_excel_any(uploaded_file):
+    """
+    Lee xlsx/xls con fallback:
+    - intenta openpyxl (xlsx)
+    - si falla, intenta xlrd (xls) si está instalado
+    """
+    try:
+        return pd.read_excel(uploaded_file, engine="openpyxl")
+    except Exception:
+        # xlrd solo funciona con .xls, y debe estar instalado
+        return pd.read_excel(uploaded_file, engine="xlrd")
+
+
 # =========================================
 # LOAD CATALOGUE
 # =========================================
 @st.cache_data
-def load_catalogue(path: str = "catalogue.xlsx") -> tuple[pd.DataFrame | None, str | None]:
+def load_catalogue(path="catalogue.xlsx"):
     if not os.path.exists(path):
         return None, f"No encuentro '{path}' en la carpeta de la app."
 
@@ -199,7 +201,6 @@ def load_catalogue(path: str = "catalogue.xlsx") -> tuple[pd.DataFrame | None, s
         df["EAN"] = df[ean_col].apply(_clean_ean)
         df = df[df["EAN"] != ""].copy()
 
-        # Referencia
         ref_col = _find_col(df, ["Referencia", "ref", "reference"])
         if ref_col and ref_col != "Referencia":
             df["Referencia"] = df[ref_col].astype(str).str.strip()
@@ -208,7 +209,6 @@ def load_catalogue(path: str = "catalogue.xlsx") -> tuple[pd.DataFrame | None, s
         else:
             df["Referencia"] = ""
 
-        # Opcionales
         for opt in ["Nombre", "Color", "Talla", "Colección", "Categoría", "Familia"]:
             col = _find_col(df, [opt])
             if col and col != opt:
@@ -216,7 +216,6 @@ def load_catalogue(path: str = "catalogue.xlsx") -> tuple[pd.DataFrame | None, s
             if opt not in df.columns:
                 df[opt] = ""
 
-        # Campo de búsqueda
         df["search_blob"] = (
             df["EAN"].astype(str)
             + " "
@@ -249,7 +248,7 @@ st.session_state.setdefault("fecha_str", datetime.now().strftime("%Y-%m-%d"))
 
 
 # =========================================
-# HYDRATE ONCE FROM LOCALSTORAGE
+# HYDRATE ONCE
 # =========================================
 if not st.session_state._hydrated:
     val = ls_get(LS_KEY, "__ls_payload")
@@ -266,22 +265,10 @@ if not st.session_state._hydrated:
 # =========================================
 st.markdown('<div class="peticiones-title">Peticiones</div>', unsafe_allow_html=True)
 
-# Diagnóstico útil (puedes dejarlo colapsado)
-with st.expander("🛠️ Diagnóstico (si algo no carga)", expanded=False):
-    st.write("Archivos en la carpeta actual:")
-    try:
-        st.code("\n".join(sorted(os.listdir("."))))
-    except Exception as e:
-        st.write(e)
-
 df_cat, cat_err = load_catalogue("catalogue.xlsx")
 if cat_err:
     st.error(cat_err)
     st.stop()
-
-with st.expander("📚 Diagnóstico catálogo", expanded=False):
-    st.write("Columnas detectadas:", list(df_cat.columns))
-    st.dataframe(df_cat.head(10), use_container_width=True)
 
 # 1) CABECERA
 c1, c2, c3 = st.columns(3)
@@ -306,28 +293,46 @@ ref_peticion = st.session_state.ref_peticion
 
 st.write("---")
 
-# 2) IMPORTADOR MASIVO
+# =========================================
+# 2) IMPORTADOR MASIVO (nuevo)
+# =========================================
 st.markdown('<div class="section-header">📂 IMPORTACIÓN DE VENTAS / REPOSICIÓN</div>', unsafe_allow_html=True)
-archivo_v = st.file_uploader(
-    "Sube el Excel con columnas EAN y Cantidad",
-    type=["xlsx"],
-    label_visibility="collapsed",
+
+u1, u2 = st.columns([3, 1])
+
+archivo_v = u1.file_uploader(
+    "Sube Excel con columnas EAN y Cantidad (xlsx o xls)",
+    type=["xlsx", "xls"],
+    key="upload_excel",
+    label_visibility="visible",
 )
 
-if archivo_v and st.button("CARGAR DATOS DEL EXCEL", type="primary"):
+if archivo_v is not None:
+    st.info(f"Archivo cargado: **{archivo_v.name}**")
+
+inject = u2.button(
+    "INJECTAR AL CARRITO",
+    type="primary",
+    disabled=(archivo_v is None),
+)
+
+if inject:
     try:
-        df_v = pd.read_excel(archivo_v, engine="openpyxl")
+        df_v = read_excel_any(archivo_v)
         df_v = _norm_cols(df_v)
 
         ean_col = _find_col(df_v, ["EAN", "Ean", "codigo ean", "código ean", "ean code"])
         qty_col = _find_col(df_v, ["Cantidad", "cantidad", "qty", "quantity", "unidades", "uds"])
 
         if not ean_col:
-            st.error(f"No encuentro columna EAN en el Excel subido. Columnas: {list(df_v.columns)}")
+            st.error(f"No encuentro columna EAN en el Excel. Columnas detectadas: {list(df_v.columns)}")
         else:
             if not qty_col:
                 st.warning("No encuentro columna de Cantidad. Usaré 1 por fila.")
-            added = 0
+
+            añadidas = 0
+            no_en_catalogo = 0
+
             for _, r in df_v.iterrows():
                 ean_v = _clean_ean(r.get(ean_col))
                 if not ean_v:
@@ -338,50 +343,57 @@ if archivo_v and st.button("CARGAR DATOS DEL EXCEL", type="primary"):
                     continue
 
                 match = df_cat[df_cat["EAN"] == ean_v]
-                if not match.empty:
-                    prod = match.iloc[0]
-                    if ean_v in st.session_state.carrito:
-                        st.session_state.carrito[ean_v]["Cantidad"] += cant_v
-                    else:
-                        st.session_state.carrito[ean_v] = {
-                            "Ref": prod.get("Referencia", ""),
-                            "Nom": prod.get("Nombre", ""),
-                            "Col": prod.get("Color", "-"),
-                            "Tal": prod.get("Talla", "-"),
-                            "Cantidad": cant_v,
-                        }
-                    added += 1
+                if match.empty:
+                    no_en_catalogo += 1
+                    continue
 
-            st.success(f"Importación OK. Líneas añadidas/actualizadas: {added}")
+                prod = match.iloc[0]
+                if ean_v in st.session_state.carrito:
+                    st.session_state.carrito[ean_v]["Cantidad"] += cant_v
+                else:
+                    st.session_state.carrito[ean_v] = {
+                        "Ref": prod.get("Referencia", ""),
+                        "Nom": prod.get("Nombre", ""),
+                        "Col": prod.get("Color", "-"),
+                        "Tal": prod.get("Talla", "-"),
+                        "Cantidad": cant_v,
+                    }
+
+                añadidas += 1
+
+            st.success(
+                f"Importación OK ✅ Líneas añadidas/actualizadas: {añadidas} | No encontradas en catálogo: {no_en_catalogo}"
+            )
             mark_dirty()
             st.rerun()
+
+    except ImportError:
+        st.error(
+            "Para leer archivos .xls necesitas añadir 'xlrd' al requirements.txt. "
+            "O convierte el archivo a .xlsx."
+        )
     except Exception as e:
         st.error(f"No he podido leer el Excel subido: {e}")
 
+st.write("---")
+
+# =========================================
 # 3) BUSCADOR Y FILTROS
+# =========================================
 st.markdown('<div class="section-header">🔍 BUSCADOR MANUAL</div>', unsafe_allow_html=True)
 f1, f2 = st.columns([2, 1])
 busq_txt = f1.text_input("Buscar referencia, nombre o EAN...", key=f"busq_{st.session_state.search_key}")
-limite = f2.selectbox(
-    "Ver resultados:",
-    [10, 25, 50, 100, 500],
-    index=1,
-    key=f"lim_{st.session_state.search_key}",
-)
+limite = f2.selectbox("Ver resultados:", [10, 25, 50, 100, 500], index=1, key=f"lim_{st.session_state.search_key}")
 
-filtros_activos: dict[str, str] = {}
+filtros_activos = {}
 columnas_posibles = ["Colección", "Categoría", "Familia"]
 columnas_reales = [c for c in columnas_posibles if c in df_cat.columns]
 
 if columnas_reales:
     cols_f = st.columns(len(columnas_reales))
     for i, col in enumerate(columnas_reales):
-        opciones = ["TODOS"] + sorted(
-            [x for x in df_cat[col].dropna().astype(str).unique().tolist() if x.strip() != ""]
-        )
-        filtros_activos[col] = cols_f[i].selectbox(
-            f"{col}", opciones, key=f"f_{col}_{st.session_state.search_key}"
-        )
+        opciones = ["TODOS"] + sorted([x for x in df_cat[col].dropna().astype(str).unique().tolist() if x.strip() != ""])
+        filtros_activos[col] = cols_f[i].selectbox(f"{col}", opciones, key=f"f_{col}_{st.session_state.search_key}")
 
 df_res = df_cat
 needle = (busq_txt or "").strip().lower()
@@ -404,14 +416,12 @@ if needle or any(v != "TODOS" for v in filtros_activos.values()):
 
         st.markdown('<div class="table-row">', unsafe_allow_html=True)
         c1r, c2r = st.columns([3, 1.5])
-
         with c1r:
             st.markdown(
                 f"<div class='cell-content'><strong>{f.get('Referencia','')}</strong><br>"
                 f"<small>{f.get('Nombre','')} ({f.get('Color','-')} / {f.get('Talla','-')})</small></div>",
                 unsafe_allow_html=True,
             )
-
         with c2r:
             label = f"OK ({st.session_state.carrito[ean]['Cantidad']})" if en_car else "AÑADIR"
             if st.button(label, key=f"b_{ean}", type="primary" if en_car else "secondary"):
@@ -427,10 +437,11 @@ if needle or any(v != "TODOS" for v in filtros_activos.values()):
                     }
                 mark_dirty()
                 st.rerun()
-
         st.markdown("</div>", unsafe_allow_html=True)
 
+# =========================================
 # 4) LISTA FINAL Y GENERACIÓN
+# =========================================
 if st.session_state.carrito:
     st.write("---")
     st.markdown('<div class="section-header">📋 LISTA DE REPOSICIÓN</div>', unsafe_allow_html=True)
@@ -447,13 +458,9 @@ if st.session_state.carrito:
 
         with cb:
             new_qty = st.number_input(
-                "C",
-                1,
-                9999,
-                int(item.get("Cantidad", 1)),
-                key=f"q_{ean}",
-                label_visibility="collapsed",
-                on_change=mark_dirty,
+                "C", 1, 9999, int(item.get("Cantidad", 1)),
+                key=f"q_{ean}", label_visibility="collapsed",
+                on_change=mark_dirty
             )
             item["Cantidad"] = int(new_qty)
 
@@ -488,7 +495,6 @@ if st.session_state.carrito:
 
     if cg.button("GENERAR Y DESCARGAR EXCEL", type="primary"):
         try:
-            # Plantilla opcional
             if os.path.exists("peticion.xlsx"):
                 with open("peticion.xlsx", "rb") as f:
                     tpl_bytes = f.read()
@@ -496,7 +502,6 @@ if st.session_state.carrito:
                 ws = wb.active
             else:
                 from openpyxl import Workbook
-
                 wb = Workbook()
                 ws = wb.active
                 ws.append(["Fecha", "Origen", "Destino", "Referencia", "EAN", "Cantidad"])
@@ -527,4 +532,3 @@ if st.session_state._dirty:
         st.session_state._dirty = False
     except Exception:
         st.session_state._dirty = False
-
