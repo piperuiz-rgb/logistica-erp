@@ -1,0 +1,7 @@
+[theme]
+base="light"
+primaryColor="#0B2D5B"            # azul profundo (botón principal)
+backgroundColor="#FFFFFF"
+secondaryBackgroundColor="#FAF7F2" # arena muy clara para cajas
+textColor="#111111"
+font="serif"
