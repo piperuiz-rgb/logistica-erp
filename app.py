@@ -690,7 +690,6 @@ if "import_result" in st.session_state and st.session_state["import_result"]:
 st.write("---")
 
 #
----------------------------------------------------------
 # 3) BUSCADOR
 # ---------------------------------------------------------
 st.markdown('<div class="section-header">🔍 BUSCADOR MANUAL</div>', unsafe_allow_html=True)
