@@ -427,8 +427,8 @@ except Exception:
 fecha = c1.date_input("FECHA", fecha_default, key="fecha_widget", on_change=mark_dirty)
 st.session_state.fecha_str = fecha.strftime("%Y-%m-%d")
 
-c2.selectbox("ORIGEN", ["PET Almacén Badalona", "ALM-CENTRAL"], key="origen", on_change=mark_dirty)
-c3.selectbox("DESTINO", ["PET T002 Marbella", "ALM-TIENDA"], key="destino", on_change=mark_dirty)
+c2.selectbox("ORIGEN", ["PET Almacén Badalona", "PET Almacén Ibiza", "PET T001 Ibiza", "PET T004 Madrid"], key="origen", on_change=mark_dirty)
+c3.selectbox("DESTINO", ["PET Almacén Badalona", "PET Almacén Ibiza", "PET T001 Ibiza", "PET T004 Madrid"], key="destino", on_change=mark_dirty)
 st.text_input("REFERENCIA PETICIÓN", key="ref_peticion", on_change=mark_dirty)
 
 fecha_str = st.session_state.fecha_str
