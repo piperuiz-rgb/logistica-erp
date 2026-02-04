@@ -15,7 +15,6 @@ st.set_page_config(page_title="Peticiones", layout="wide")
 LS_KEY = "peticiones_estado_v1"
 localS = LocalStorage()
 
-
 def _serialize_state():
     return {
         "carrito": st.session_state.get("carrito", {}),
@@ -25,28 +24,20 @@ def _serialize_state():
         "ref_peticion": st.session_state.get("ref_peticion", ""),
     }
 
-
 def _apply_state(payload: dict):
     if not isinstance(payload, dict):
         return
     st.session_state.carrito = payload.get("carrito", {}) or {}
-
-    if payload.get("origen") is not None:
-        st.session_state.origen = payload["origen"]
-    if payload.get("destino") is not None:
-        st.session_state.destino = payload["destino"]
-    if payload.get("ref_peticion") is not None:
-        st.session_state.ref_peticion = payload["ref_peticion"]
-    if payload.get("fecha_str") is not None:
-        st.session_state.fecha_str = payload["fecha_str"]
-
+    for k in ("origen", "destino", "ref_peticion", "fecha_str"):
+        if payload.get(k) is not None:
+            st.session_state[k] = payload[k]
 
 def mark_dirty():
     st.session_state["_dirty"] = True
 
 
 # =========================
-#  ESTILO
+#  ESTILO (tu CSS)
 # =========================
 st.markdown(
     """
@@ -93,23 +84,96 @@ st.markdown(
 )
 
 # =========================
-#  CATALOGO
+#  Helpers de columnas
+# =========================
+def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
+
+def _find_col(df: pd.DataFrame, candidates):
+    cols_low = {c.lower(): c for c in df.columns}
+    for cand in candidates:
+        if cand.lower() in cols_low:
+            return cols_low[cand.lower()]
+    # búsqueda "contiene" (por si viene como "Código EAN", "EAN Code", etc.)
+    for c in df.columns:
+        cl = c.lower()
+        for cand in candidates:
+            if cand.lower() in cl:
+                return c
+    return None
+
+def _clean_ean(x) -> str:
+    if pd.isna(x):
+        return ""
+    s = str(x).strip()
+    if s.lower() == "nan":
+        return ""
+    # quitar ".0" típico de excel
+    if s.endswith(".0"):
+        s = s[:-2]
+    # quitar espacios
+    s = s.strip()
+    return s
+
+def _safe_int(x, default=1):
+    try:
+        if pd.isna(x):
+            return default
+        v = int(float(x))
+        return v
+    except Exception:
+        return default
+
+
+# =========================
+#  CATALOGO (robusto + diagnóstico)
 # =========================
 @st.cache_data
-def get_catalogue():
-    if not os.path.exists("catalogue.xlsx"):
-        return None
+def load_catalogue(path="catalogue.xlsx"):
+    if not os.path.exists(path):
+        return None, f"No encuentro '{path}' en el directorio de la app."
     try:
-        df = pd.read_excel("catalogue.xlsx", engine="openpyxl")
-        if "EAN" not in df.columns:
-            return None
-        df["EAN"] = df["EAN"].astype(str).str.replace(".0", "", regex=False).str.strip()
-        return df
-    except Exception:
-        return None
+        df = pd.read_excel(path, engine="openpyxl")
+        df = _norm_cols(df)
 
+        ean_col = _find_col(df, ["EAN", "Ean", "codigo ean", "código ean", "ean code"])
+        if not ean_col:
+            return None, f"Catálogo leído, pero NO encuentro columna EAN. Columnas: {list(df.columns)}"
 
-df_cat = get_catalogue()
+        df["EAN"] = df[ean_col].apply(_clean_ean)
+        df = df[df["EAN"] != ""].copy()
+
+        # Normaliza columnas típicas si existen con nombres raros
+        ref_col = _find_col(df, ["Referencia", "ref", "reference"])
+        if ref_col and ref_col != "Referencia":
+            df["Referencia"] = df[ref_col].astype(str).str.strip()
+        elif "Referencia" in df.columns:
+            df["Referencia"] = df["Referencia"].astype(str).str.strip()
+        else:
+            df["Referencia"] = ""
+
+        # columnas opcionales
+        for opt in ["Nombre", "Color", "Talla", "Colección", "Categoría", "Familia"]:
+            col = _find_col(df, [opt])
+            if col and col != opt:
+                df[opt] = df[col]
+            if opt not in df.columns:
+                df[opt] = ""
+
+        # Campo de búsqueda rápido
+        df["search_blob"] = (
+            df["EAN"].astype(str) + " " +
+            df["Referencia"].astype(str) + " " +
+            df["Nombre"].astype(str) + " " +
+            df["Color"].astype(str) + " " +
+            df["Talla"].astype(str)
+        ).str.lower()
+
+        return df, None
+    except Exception as e:
+        return None, f"Error leyendo catálogo: {e}"
 
 # =========================
 #  SESSION STATE INIT
@@ -123,23 +187,18 @@ if "_dirty" not in st.session_state:
 if "_hydrated" not in st.session_state:
     st.session_state._hydrated = False
 
-# Defaults de cabecera (por si no viene nada del LocalStorage)
-if "origen" not in st.session_state:
-    st.session_state.origen = "PET Almacén Badalona"
-if "destino" not in st.session_state:
-    st.session_state.destino = "PET T002 Marbella"
-if "ref_peticion" not in st.session_state:
-    st.session_state.ref_peticion = ""
-if "fecha_str" not in st.session_state:
-    st.session_state.fecha_str = datetime.now().strftime("%Y-%m-%d")
+# Defaults cabecera
+st.session_state.setdefault("origen", "PET Almacén Badalona")
+st.session_state.setdefault("destino", "PET T002 Marbella")
+st.session_state.setdefault("ref_peticion", "")
+st.session_state.setdefault("fecha_str", datetime.now().strftime("%Y-%m-%d"))
 
 # =========================
 #  HIDRATAR DESDE LOCAL STORAGE (1 vez)
 # =========================
 if not st.session_state._hydrated:
-    # Vuelca el valor en st.session_state["__ls_payload"]
     localS.getItem(LS_KEY, key="__ls_payload")
-    if "__ls_payload" in st.session_state and st.session_state["__ls_payload"]:
+    if st.session_state.get("__ls_payload"):
         try:
             payload = json.loads(st.session_state["__ls_payload"])
             _apply_state(payload)
@@ -152,14 +211,26 @@ if not st.session_state._hydrated:
 # =========================
 st.markdown('<div class="peticiones-title">Peticiones</div>', unsafe_allow_html=True)
 
-if df_cat is None:
-    st.error("Error: Asegúrate de tener el archivo 'catalogue.xlsx' en la carpeta y que tenga columna 'EAN'.")
+# Panel diagnóstico (para que veas qué pasa en la nube)
+with st.expander("🛠️ Diagnóstico (si algo no carga)", expanded=False):
+    st.write("📁 Archivos en carpeta actual (si estás en hosting, solo verás los del contenedor):")
+    try:
+        st.code("\n".join(sorted(os.listdir("."))))
+    except Exception as e:
+        st.write(e)
+
+df_cat, cat_err = load_catalogue("catalogue.xlsx")
+if cat_err:
+    st.error(cat_err)
     st.stop()
 
-# 1) CABECERA LOGÍSTICA (persistente)
+with st.expander("📚 Diagnóstico catálogo", expanded=False):
+    st.write("Columnas detectadas:", list(df_cat.columns))
+    st.dataframe(df_cat.head(10))
+
+# 1) CABECERA LOGÍSTICA
 c1, c2, c3 = st.columns(3)
 
-# FECHA: guardamos como string ISO en session_state
 try:
     fecha_default = datetime.strptime(st.session_state.fecha_str, "%Y-%m-%d")
 except Exception:
@@ -182,30 +253,33 @@ st.write("---")
 
 # 2) IMPORTADOR MASIVO
 st.markdown('<div class="section-header">📂 IMPORTACIÓN DE VENTAS / REPOSICIÓN</div>', unsafe_allow_html=True)
-archivo_v = st.file_uploader(
-    "Sube el Excel con columnas EAN y Cantidad",
-    type=["xlsx"],
-    label_visibility="collapsed",
-)
+archivo_v = st.file_uploader("Sube el Excel con columnas EAN y Cantidad", type=["xlsx"], label_visibility="collapsed")
+
+if archivo_v:
+    # Diagnóstico de subida
+    with st.expander("📎 Diagnóstico Excel subido", expanded=False):
+        st.write("Nombre:", archivo_v.name)
+        st.write("Tipo:", archivo_v.type)
 
 if archivo_v and st.button("CARGAR DATOS DEL EXCEL", type="primary"):
     try:
         df_v = pd.read_excel(archivo_v, engine="openpyxl")
-        if "EAN" not in df_v.columns:
-            st.error("El Excel subido debe tener una columna 'EAN'.")
+        df_v = _norm_cols(df_v)
+
+        ean_col = _find_col(df_v, ["EAN", "Ean", "codigo ean", "código ean", "ean code"])
+        qty_col = _find_col(df_v, ["Cantidad", "cantidad", "qty", "quantity", "unidades", "uds"])
+
+        if not ean_col:
+            st.error(f"No encuentro columna EAN en el Excel subido. Columnas: {list(df_v.columns)}")
         else:
-            # Cantidad puede no existir: default 1
-            for _, f_v in df_v.iterrows():
-                ean_v = str(f_v.get("EAN", "")).replace(".0", "").strip()
+            if not qty_col:
+                st.warning("No encuentro columna de Cantidad. Usaré 1 por fila.")
+            added = 0
+            for _, r in df_v.iterrows():
+                ean_v = _clean_ean(r.get(ean_col))
                 if not ean_v:
                     continue
-
-                # Cantidad robusta
-                raw_qty = f_v.get("Cantidad", 1)
-                try:
-                    cant_v = int(raw_qty) if pd.notna(raw_qty) else 1
-                except Exception:
-                    cant_v = 1
+                cant_v = _safe_int(r.get(qty_col), default=1) if qty_col else 1
                 if cant_v <= 0:
                     continue
 
@@ -222,21 +296,19 @@ if archivo_v and st.button("CARGAR DATOS DEL EXCEL", type="primary"):
                             "Tal": prod.get("Talla", "-"),
                             "Cantidad": cant_v,
                         }
+                    added += 1
+
+            st.success(f"Importación OK. Líneas añadidas/actualizadas: {added}")
             mark_dirty()
             st.rerun()
     except Exception as e:
-        st.error(f"No he podido leer el Excel: {e}")
+        st.error(f"No he podido leer el Excel subido: {e}")
 
 # 3) BUSCADOR Y FILTROS
 st.markdown('<div class="section-header">🔍 BUSCADOR MANUAL</div>', unsafe_allow_html=True)
 f1, f2 = st.columns([2, 1])
 busq_txt = f1.text_input("Buscar referencia, nombre o EAN...", key=f"busq_{st.session_state.search_key}")
-limite = f2.selectbox(
-    "Ver resultados:",
-    [10, 25, 50, 100, 500],
-    index=1,
-    key=f"lim_{st.session_state.search_key}",
-)
+limite = f2.selectbox("Ver resultados:", [10, 25, 50, 100, 500], index=1, key=f"lim_{st.session_state.search_key}")
 
 filtros_activos = {}
 columnas_posibles = ["Colección", "Categoría", "Familia"]
@@ -245,22 +317,20 @@ columnas_reales = [c for c in columnas_posibles if c in df_cat.columns]
 if columnas_reales:
     cols_f = st.columns(len(columnas_reales))
     for i, col in enumerate(columnas_reales):
-        opciones = ["TODOS"] + sorted(df_cat[col].dropna().unique().tolist())
-        filtros_activos[col] = cols_f[i].selectbox(
-            f"{col}", opciones, key=f"f_{col}_{st.session_state.search_key}"
-        )
+        opciones = ["TODOS"] + sorted([x for x in df_cat[col].dropna().astype(str).unique().tolist() if x.strip() != ""])
+        filtros_activos[col] = cols_f[i].selectbox(f"{col}", opciones, key=f"f_{col}_{st.session_state.search_key}")
 
-df_res = df_cat.copy()
-if busq_txt:
-    # Búsqueda simple (mantengo tu lógica), pero más robusta a nulos
-    needle = busq_txt.lower().strip()
-    df_res = df_res[df_res.apply(lambda row: needle in " ".join(map(lambda x: str(x).lower(), row.values)), axis=1)]
+df_res = df_cat
+
+needle = (busq_txt or "").strip().lower()
+if needle:
+    df_res = df_res[df_res["search_blob"].str.contains(needle, na=False)]
 
 for col, val in filtros_activos.items():
     if val != "TODOS":
-        df_res = df_res[df_res[col] == val]
+        df_res = df_res[df_res[col].astype(str) == str(val)]
 
-if busq_txt or any(v != "TODOS" for v in filtros_activos.values()):
+if needle or any(v != "TODOS" for v in filtros_activos.values()):
     st.markdown(
         f"<div style='background: #000; color: #fff; padding: 4px; font-size: 0.7rem; text-align: center;'>{len(df_res)} COINCIDENCIAS</div>",
         unsafe_allow_html=True,
@@ -272,11 +342,14 @@ if busq_txt or any(v != "TODOS" for v in filtros_activos.values()):
 
         st.markdown('<div class="table-row">', unsafe_allow_html=True)
         c1r, c2r = st.columns([3, 1.5])
+
         with c1r:
             st.markdown(
-                f"<div class='cell-content'><strong>{f.get('Referencia','')}</strong><br><small>{f.get('Nombre','')} ({f.get('Color','-')} / {f.get('Talla','-')})</small></div>",
+                f"<div class='cell-content'><strong>{f.get('Referencia','')}</strong><br>"
+                f"<small>{f.get('Nombre','')} ({f.get('Color','-')} / {f.get('Talla','-')})</small></div>",
                 unsafe_allow_html=True,
             )
+
         with c2r:
             label = f"OK ({st.session_state.carrito[ean]['Cantidad']})" if en_car else "AÑADIR"
             if st.button(label, key=f"b_{ean}", type="primary" if en_car else "secondary"):
@@ -292,6 +365,7 @@ if busq_txt or any(v != "TODOS" for v in filtros_activos.values()):
                     }
                 mark_dirty()
                 st.rerun()
+
         st.markdown("</div>", unsafe_allow_html=True)
 
 # 4) LISTA FINAL Y GENERACIÓN
@@ -299,7 +373,6 @@ if st.session_state.carrito:
     st.write("---")
     st.markdown('<div class="section-header">📋 LISTA DE REPOSICIÓN</div>', unsafe_allow_html=True)
 
-    # Pintar items
     for ean, item in list(st.session_state.carrito.items()):
         st.markdown('<div class="table-row">', unsafe_allow_html=True)
         ca, cb, cc = st.columns([2.5, 1.2, 0.8])
@@ -311,15 +384,10 @@ if st.session_state.carrito:
             )
 
         with cb:
-            # Si cambia cantidad, marcamos dirty
             new_qty = st.number_input(
-                "C",
-                1,
-                9999,
-                int(item.get("Cantidad", 1)),
-                key=f"q_{ean}",
-                label_visibility="collapsed",
-                on_change=mark_dirty,
+                "C", 1, 9999, int(item.get("Cantidad", 1)),
+                key=f"q_{ean}", label_visibility="collapsed",
+                on_change=mark_dirty
             )
             item["Cantidad"] = int(new_qty)
 
@@ -345,7 +413,6 @@ if st.session_state.carrito:
         mark_dirty()
         st.rerun()
 
-    # Botón opcional: borrar también el estado persistido en ESTE navegador
     if cv.button("🧹 OLVIDAR EN ESTE NAVEGADOR"):
         localS.setItem(LS_KEY, json.dumps({"carrito": {}, "ref_peticion": ""}))
         st.session_state.carrito = {}
@@ -353,19 +420,15 @@ if st.session_state.carrito:
         st.session_state._dirty = False
         st.rerun()
 
-    # Generar Excel (en memoria) partiendo de una plantilla si existe
     if cg.button("GENERAR Y DESCARGAR EXCEL", type="primary"):
         try:
-            # Si hay plantilla, la usamos; si no, creamos workbook nuevo "simple"
             if os.path.exists("peticion.xlsx"):
                 with open("peticion.xlsx", "rb") as f:
                     tpl_bytes = f.read()
                 wb = load_workbook(io.BytesIO(tpl_bytes))
                 ws = wb.active
             else:
-                # fallback: workbook nuevo (sin formato)
                 from openpyxl import Workbook
-
                 wb = Workbook()
                 ws = wb.active
                 ws.append(["Fecha", "Origen", "Destino", "Referencia", "EAN", "Cantidad"])
@@ -395,6 +458,4 @@ if st.session_state._dirty:
         localS.setItem(LS_KEY, json.dumps(payload))
         st.session_state._dirty = False
     except Exception:
-        # Si falla localStorage por algún motivo, no bloqueamos la app
         st.session_state._dirty = False
-```0
