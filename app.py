@@ -578,4 +578,6 @@ if st.session_state._dirty:
     try:
         payload = _serialize_state()
         ls_set(LS_KEY, json.dumps(payload))
-        st.session_s
+        st.session_state._dirty = False
+    except Exception:
+        st.session_state._dirty = False
