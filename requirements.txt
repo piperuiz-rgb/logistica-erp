@@ -2,4 +2,5 @@ streamlit>=1.31.0
 pandas
 openpyxl
 xlsxwriter
+xlrd==2.0.1
 streamlit-local-storage==0.0.25
