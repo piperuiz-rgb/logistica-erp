@@ -431,14 +431,6 @@ c2.selectbox("ORIGEN", ["PET Almacén Badalona", "PET Almacén Ibiza", "PET T001
 c3.selectbox("DESTINO", ["PET Almacén Badalona", "PET Almacén Ibiza", "PET T001 Ibiza", "PET T002 Marbella", "PET T004 Madrid"], key="destino", on_change=mark_dirty)
 st.text_input("REFERENCIA PETICIÓN", key="ref_peticion", on_change=mark_dirty)
 
-bloqueo_almacen = False
-
-if almacen_origen == almacen_destino:
-    st.error(
-        "❌ El almacén de origen y el almacén de destino no pueden ser el mismo.\n\n"
-        "Por favor, selecciona almacenes distintos para continuar."
-    )
-    bloqueo_almacen = True
 
 fecha_str = st.session_state.fecha_str
 origen = st.session_state.origen
