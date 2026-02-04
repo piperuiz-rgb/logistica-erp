@@ -760,7 +760,7 @@ if st.session_state.carrito:
 
     if cg.button("GENERAR Y DESCARGAR EXCEL", type="primary"):
         if bloqueo_almacen:
-        st.stop()
+            st.stop()
     if not confirmacion_almacenes:
         st.warning("⚠️ Debes confirmar los almacenes antes de continuar.")
         st.stop() 
