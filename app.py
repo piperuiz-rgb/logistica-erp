@@ -759,6 +759,8 @@ if st.session_state.carrito:
         st.rerun()
 
     if cg.button("GENERAR Y DESCARGAR EXCEL", type="primary"):
+        if bloqueo_almacen:
+        st.stop()
         try:
             if os.path.exists("peticion.xlsx"):
                 with open("peticion.xlsx", "rb") as f:
