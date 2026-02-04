@@ -8,17 +8,17 @@ from datetime import datetime
 from openpyxl import load_workbook
 from streamlit_local_storage import LocalStorage
 
-# =========================================
+# =========================================================
 # CONFIG
-# =========================================
+# =========================================================
 st.set_page_config(page_title="Peticiones", layout="wide")
 
 LS_KEY = "peticiones_estado_v1"
 localS = LocalStorage()
 
-# =========================================
+# =========================================================
 # LOCAL STORAGE (compatibilidad entre firmas)
-# =========================================
+# =========================================================
 def ls_get(item_key: str, ss_key: str):
     try:
         out = localS.getItem(item_key, key=ss_key)
@@ -45,9 +45,10 @@ def ls_get(item_key: str, ss_key: str):
 def ls_set(item_key: str, value: str) -> None:
     localS.setItem(item_key, value)
 
-# =========================================
+
+# =========================================================
 # STATE HELPERS
-# =========================================
+# =========================================================
 def _serialize_state() -> dict:
     return {
         "carrito": st.session_state.get("carrito", {}),
@@ -70,9 +71,10 @@ def _apply_state(payload: dict) -> None:
 def mark_dirty() -> None:
     st.session_state["_dirty"] = True
 
-# =========================================
+
+# =========================================================
 # STYLE (tu CSS)
-# =========================================
+# =========================================================
 st.markdown(
     """
 <style>
@@ -117,9 +119,9 @@ div[data-testid="stHeader"], .stTabs, [data-testid="stVerticalBlock"] {
     unsafe_allow_html=True,
 )
 
-# =========================================
-# DATA HELPERS
-# =========================================
+# =========================================================
+# UTILIDADES
+# =========================================================
 def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = [str(c).strip() for c in df.columns]
@@ -150,56 +152,104 @@ def _clean_ean(x) -> str:
     return s.strip()
 
 
-def _safe_int(x, default=0) -> int:
-    try:
-        if pd.isna(x):
-            return default
-        return int(float(x))
-    except Exception:
-        return default
-
-
 def read_excel_any(uploaded_file):
+    # xlsx -> openpyxl ; xls -> xlrd (requiere xlrd==2.0.1)
     try:
         return pd.read_excel(uploaded_file, engine="openpyxl")
     except Exception:
         return pd.read_excel(uploaded_file, engine="xlrd")
 
 
-def parse_producto_linea(s: str):
-    """
-    Espera strings tipo:
-      [262200] Blusa Elyr (Blanco Lagoon, XS)
-    Devuelve (ref, color, talla) o (None, None, None)
-    """
-    if not isinstance(s, str):
-        return None, None, None
-    s = s.strip()
+def make_excel_download(df: pd.DataFrame) -> bytes:
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="INCIDENCIAS")
+    out.seek(0)
+    return out.getvalue()
 
-    m = re.search(r"\[(.*?)\]", s)
-    if not m:
-        return None, None, None
-    ref = m.group(1).strip()
 
-    pm = re.search(r"\((.*)\)\s*$", s)
-    if not pm:
-        return ref, None, None
-
-    inside = pm.group(1).strip()
-    if "," in inside:
-        color, talla = inside.rsplit(",", 1)
-        return ref, color.strip(), talla.strip()
-    return ref, inside.strip(), ""
+# Normalización fuerte + mapa básico de tallas
+TALLA_MAP = {
+    "x-small": "xs", "x small": "xs", "xs": "xs",
+    "small": "s", "s": "s",
+    "medium": "m", "m": "m",
+    "large": "l", "l": "l",
+    "x-large": "xl", "x large": "xl", "xl": "xl",
+    "xxl": "xxl", "xxxl": "xxxl",
+    "1": "1", "2": "2", "3": "3", "4": "4", "5": "5",
+}
 
 
 def norm_txt(x) -> str:
     if x is None:
         return ""
-    return str(x).strip().casefold()
+    s = str(x).strip().casefold()
+    s = re.sub(r"\s+", " ", s)
+    return s
 
-# =========================================
-# LOAD CATALOGUE
-# =========================================
+
+def norm_color(x) -> str:
+    s = norm_txt(x)
+    s = s.replace(" - ", "-").replace(" / ", "/")
+    return s
+
+
+def norm_talla(x) -> str:
+    s = norm_txt(x)
+    return TALLA_MAP.get(s, s)
+
+
+def looks_like_talla(token: str) -> bool:
+    """
+    Heurística simple: si el token normalizado coincide con una talla conocida,
+    o si es del tipo XS/S/M/L/XL/XXL/XXXL, o numérico corto.
+    """
+    t = norm_talla(token)
+    if t in set(TALLA_MAP.values()):
+        return True
+    if re.fullmatch(r"(xs|s|m|l|xl|xxl|xxxl)", t):
+        return True
+    if re.fullmatch(r"\d{1,2}", t):
+        return True
+    return False
+
+
+def parse_producto_linea(raw: str):
+    """
+    Admite:
+      [262200] Blusa Elyr (Blanco Lagoon, XS)   -> 2 atributos
+      [262200] Blusa Elyr (XS)                 -> 1 atributo
+      [262200] Blusa Elyr (Blanco Lagoon)      -> 1 atributo
+    Devuelve:
+      ref_imp, attr1, attr2, num_attrs
+    """
+    if not isinstance(raw, str):
+        return None, None, None, 0
+    s = raw.strip()
+
+    m = re.search(r"\[(.*?)\]", s)
+    if not m:
+        return None, None, None, 0
+    ref = m.group(1).strip()
+
+    pm = re.search(r"\((.*)\)\s*$", s)
+    if not pm:
+        return ref, None, None, 0
+
+    inside = pm.group(1).strip()
+    if not inside:
+        return ref, None, None, 0
+
+    if "," in inside:
+        a1, a2 = inside.rsplit(",", 1)
+        return ref, a1.strip(), a2.strip(), 2
+
+    return ref, inside.strip(), None, 1
+
+
+# =========================================================
+# CATÁLOGO
+# =========================================================
 @st.cache_data
 def load_catalogue(path="catalogue.xlsx"):
     if not os.path.exists(path):
@@ -214,7 +264,6 @@ def load_catalogue(path="catalogue.xlsx"):
             return None, f"Catálogo leído, pero NO encuentro columna EAN. Columnas: {list(df.columns)}"
 
         df["EAN"] = df[ean_col].apply(_clean_ean)
-        df = df[df["EAN"] != ""].copy()
 
         ref_col = _find_col(df, ["Referencia", "ref", "reference"])
         if ref_col and ref_col != "Referencia":
@@ -230,6 +279,11 @@ def load_catalogue(path="catalogue.xlsx"):
                 df[opt] = df[col]
             if opt not in df.columns:
                 df[opt] = ""
+
+        # Normalizados
+        df["ref_n"] = df["Referencia"].apply(norm_txt)
+        df["color_n"] = df["Color"].apply(norm_color)
+        df["talla_n"] = df["Talla"].apply(norm_talla)
 
         df["search_blob"] = (
             df["EAN"].astype(str)
@@ -247,22 +301,143 @@ def load_catalogue(path="catalogue.xlsx"):
     except Exception as e:
         return None, f"Error leyendo catálogo: {e}"
 
-# =========================================
+
+def build_catalog_indexes(df_cat: pd.DataFrame):
+    """
+    Construye índices para matching:
+      - exact: (ref,color,talla) -> [rows]
+      - ref_color: (ref,color) -> [rows]
+      - ref_talla: (ref,talla) -> [rows]
+      - ref_only: ref -> [rows]
+    """
+    exact = {}
+    ref_color = {}
+    ref_talla = {}
+    ref_only = {}
+
+    def add(d, k, row):
+        d.setdefault(k, []).append(row)
+
+    for _, r in df_cat.iterrows():
+        row = {
+            "EAN": str(r.get("EAN", "")).strip(),
+            "Referencia": r.get("Referencia", ""),
+            "Nombre": r.get("Nombre", ""),
+            "Color": r.get("Color", ""),
+            "Talla": r.get("Talla", ""),
+            "ref_n": r.get("ref_n", ""),
+            "color_n": r.get("color_n", ""),
+            "talla_n": r.get("talla_n", ""),
+        }
+        add(exact, (row["ref_n"], row["color_n"], row["talla_n"]), row)
+        add(ref_color, (row["ref_n"], row["color_n"]), row)
+        add(ref_talla, (row["ref_n"], row["talla_n"]), row)
+        add(ref_only, row["ref_n"], row)
+
+    return exact, ref_color, ref_talla, ref_only
+
+
+def pick_unique(rows: list[dict]):
+    """
+    Devuelve (row, None) si hay un match único; si 0 -> (None,'NO_ENCONTRADO'); si >1 -> (None,'AMBIGUO')
+    """
+    if not rows:
+        return None, "NO_ENCONTRADO"
+    if len(rows) == 1:
+        return rows[0], None
+    return None, "AMBIGUO"
+
+
+def match_producto(ref_imp: str, a1: str | None, a2: str | None, n_attrs: int,
+                   idx_exact, idx_ref_color, idx_ref_talla, idx_ref_only):
+    """
+    Devuelve: (matched_row | None, reason | None, strategy_text)
+    reason:
+      - NO_ENCONTRADO
+      - AMBIGUO
+      - SIN_EAN
+    strategy_text:
+      - EXACTO ref+color+talla
+      - ref+color
+      - ref+talla
+      - ref+atributo (probado como color/talla)
+    """
+    ref_n = norm_txt(ref_imp)
+
+    # 2 atributos -> intentamos exacto
+    if n_attrs == 2:
+        color_n = norm_color(a1)
+        talla_n = norm_talla(a2)
+        row, err = pick_unique(idx_exact.get((ref_n, color_n, talla_n), []))
+        if row:
+            if not row.get("EAN"):
+                return None, "SIN_EAN", "EXACTO ref+color+talla"
+            return row, None, "EXACTO ref+color+talla"
+        return None, err, "EXACTO ref+color+talla"
+
+    # 1 atributo -> probar por el atributo que haya
+    if n_attrs == 1 and a1:
+        token = a1.strip()
+        token_is_talla = looks_like_talla(token)
+
+        # Si parece talla -> primero ref+talla
+        if token_is_talla:
+            talla_n = norm_talla(token)
+            row, err = pick_unique(idx_ref_talla.get((ref_n, talla_n), []))
+            if row:
+                if not row.get("EAN"):
+                    return None, "SIN_EAN", "ref+talla"
+                return row, None, "ref+talla"
+            # si no se encuentra por talla, intentamos ref+color por si venía talla rara
+            color_n = norm_color(token)
+            row, err2 = pick_unique(idx_ref_color.get((ref_n, color_n), []))
+            if row:
+                if not row.get("EAN"):
+                    return None, "SIN_EAN", "ref+color"
+                return row, None, "ref+color"
+            # si ambos fallan, devolvemos el más informativo: si alguno fue AMBIGUO, avisarlo
+            if err == "AMBIGUO" or err2 == "AMBIGUO":
+                return None, "AMBIGUO", "ref+(atributo)"
+            return None, "NO_ENCONTRADO", "ref+(atributo)"
+
+        # Si NO parece talla -> primero ref+color
+        color_n = norm_color(token)
+        row, err = pick_unique(idx_ref_color.get((ref_n, color_n), []))
+        if row:
+            if not row.get("EAN"):
+                return None, "SIN_EAN", "ref+color"
+            return row, None, "ref+color"
+
+        # si no, intentar ref+talla por si el color era en realidad talla
+        talla_n = norm_talla(token)
+        row, err2 = pick_unique(idx_ref_talla.get((ref_n, talla_n), []))
+        if row:
+            if not row.get("EAN"):
+                return None, "SIN_EAN", "ref+talla"
+            return row, None, "ref+talla"
+
+        if err == "AMBIGUO" or err2 == "AMBIGUO":
+            return None, "AMBIGUO", "ref+(atributo)"
+        return None, "NO_ENCONTRADO", "ref+(atributo)"
+
+    return None, "NO_ENCONTRADO", "sin atributos"
+
+
+# =========================================================
 # SESSION STATE INIT
-# =========================================
+# =========================================================
 st.session_state.setdefault("carrito", {})
 st.session_state.setdefault("search_key", 0)
 st.session_state.setdefault("_dirty", False)
 st.session_state.setdefault("_hydrated", False)
-
 st.session_state.setdefault("origen", "PET Almacén Badalona")
 st.session_state.setdefault("destino", "PET T002 Marbella")
 st.session_state.setdefault("ref_peticion", "")
 st.session_state.setdefault("fecha_str", datetime.now().strftime("%Y-%m-%d"))
 
-# =========================================
+# =========================================================
 # HYDRATE ONCE
-# =========================================
+# =========================================================
 if not st.session_state._hydrated:
     val = ls_get(LS_KEY, "__ls_payload")
     if val:
@@ -272,9 +447,10 @@ if not st.session_state._hydrated:
             pass
     st.session_state._hydrated = True
 
-# =========================================
+
+# =========================================================
 # UI
-# =========================================
+# =========================================================
 st.markdown('<div class="peticiones-title">Peticiones</div>', unsafe_allow_html=True)
 
 df_cat, cat_err = load_catalogue("catalogue.xlsx")
@@ -282,7 +458,11 @@ if cat_err:
     st.error(cat_err)
     st.stop()
 
+idx_exact, idx_ref_color, idx_ref_talla, idx_ref_only = build_catalog_indexes(df_cat)
+
+# ---------------------------------------------------------
 # 1) CABECERA
+# ---------------------------------------------------------
 c1, c2, c3 = st.columns(3)
 
 try:
@@ -305,9 +485,16 @@ ref_peticion = st.session_state.ref_peticion
 
 st.write("---")
 
-# =========================================
-# 2) IMPORTADOR MASIVO (A=producto, B o C = cantidad)
-# =========================================
+# ---------------------------------------------------------
+---------------------------------------------------------
+# 2) IMPORTADOR MASIVO
+#    - A = producto
+#    - cantidad en C si hay algún valor >0, si no en B
+#    - cruza por:
+#         2 attrs: ref+color+talla
+#         1 attr: ref + (color o talla)
+#    - si cruza pero NO tiene EAN -> aviso específico
+# ---------------------------------------------------------
 st.markdown('<div class="section-header">📂 IMPORTACIÓN DE VENTAS / REPOSICIÓN</div>', unsafe_allow_html=True)
 
 u1, u2 = st.columns([3, 1])
@@ -334,87 +521,115 @@ if inject:
 
         prod_series = df_v.iloc[:, 0].astype(str)
 
-        # Cantidad: si hay columna C (índice 2) con algún valor numérico >0, usar C; si no, usar B
         qty_b = pd.to_numeric(df_v.iloc[:, 1], errors="coerce")
         qty_c = None
         use_c = False
-
         if df_v.shape[1] >= 3:
             qty_c = pd.to_numeric(df_v.iloc[:, 2], errors="coerce")
             if qty_c.notna().any() and (qty_c.fillna(0) > 0).any():
                 use_c = True
 
-        qty_series = qty_c if use_c else qty_b
-        qty_series = qty_series.fillna(0).astype(int)
+        qty_series = (qty_c if use_c else qty_b).fillna(0).astype(int)
 
         work = pd.DataFrame({"prod_raw": prod_series, "qty": qty_series})
         work["prod_raw"] = work["prod_raw"].astype(str).str.strip()
-
-        # Filtrar solo qty > 0
         work = work[work["qty"] > 0].copy()
 
-        # Filtrar filas que parezcan productos reales
+        # Solo filas con referencia entre corchetes y paréntesis al final
         mask = work["prod_raw"].str.contains(r"\[.*?\].*\(.*\)", regex=True, na=False)
         work = work[mask].copy()
 
         if work.empty:
-            st.warning("No he encontrado filas válidas en A (formato: [REF] ... (Color, Talla)) con cantidad > 0.")
-            st.stop()
+            st.session_state["import_result"] = {
+                "added": 0,
+                "no_match": 0,
+                "no_ean": 0,
+                "ambiguous": 0,
+                "used_qty_col": "C" if use_c else "B",
+                "note": "No se encontraron filas válidas (patrón [REF] ... (atributos) y qty>0).",
+            }
+            st.session_state["import_issues_records"] = []
+            st.rerun()
 
-        # Parsear a ref/color/talla
+        # Parse
         parsed = work["prod_raw"].apply(parse_producto_linea)
         work["ref_imp"] = parsed.apply(lambda t: t[0])
-        work["color_imp"] = parsed.apply(lambda t: t[1])
-        work["talla_imp"] = parsed.apply(lambda t: t[2])
+        work["a1"] = parsed.apply(lambda t: t[1])
+        work["a2"] = parsed.apply(lambda t: t[2])
+        work["n_attrs"] = parsed.apply(lambda t: t[3])
 
-        # Normalizar catálogo para cruce
-        cat = df_cat.copy()
-        cat["ref_n"] = cat["Referencia"].apply(norm_txt)
-        cat["color_n"] = cat["Color"].apply(norm_txt)
-        cat["talla_n"] = cat["Talla"].apply(norm_txt)
-
-        work["ref_n"] = work["ref_imp"].apply(norm_txt)
-        work["color_n"] = work["color_imp"].apply(norm_txt)
-        work["talla_n"] = work["talla_imp"].apply(norm_txt)
-
-        merged = work.merge(
-            cat[["EAN", "Referencia", "Nombre", "Color", "Talla", "ref_n", "color_n", "talla_n"]],
-            how="left",
-            on=["ref_n", "color_n", "talla_n"],
+        # Agrupar duplicados por lo parseado (reduce ruido)
+        grouped = (
+            work.groupby(["ref_imp", "a1", "a2", "n_attrs"], as_index=False)["qty"]
+            .sum()
+            .copy()
         )
 
-        # Añadir al carrito las que sí crucen
-        añadidas = 0
-        for _, r in merged.iterrows():
-            if pd.isna(r["EAN"]):
-                continue
-            ean = str(r["EAN"]).strip()
+        added_lines = 0
+        issues = []
+        c_no_match = 0
+        c_no_ean = 0
+        c_amb = 0
+
+        for _, r in grouped.iterrows():
+            ref_imp = r["ref_imp"]
+            a1 = r["a1"]
+            a2 = r["a2"]
+            n_attrs = int(r["n_attrs"])
             qty = int(r["qty"])
 
+            row, reason, strategy = match_producto(
+                ref_imp, a1, a2, n_attrs,
+                idx_exact, idx_ref_color, idx_ref_talla, idx_ref_only
+            )
+
+            if row is None:
+                if reason == "SIN_EAN":
+                    c_no_ean += 1
+                    motivo = "Referencia encontrada pero SIN EAN en catálogo"
+                elif reason == "AMBIGUO":
+                    c_amb += 1
+                    motivo = "Cruce AMBIGUO (varios productos posibles). Añade más detalle (color/talla)."
+                else:
+                    c_no_match += 1
+                    motivo = "No se ha encontrado en catálogo con los datos disponibles"
+
+                issues.append(
+                    {
+                        "Motivo": motivo,
+                        "Estrategia": strategy,
+                        "Producto_raw": f"[{ref_imp}] ({a1}{', ' + a2 if a2 else ''})",
+                        "Referencia": ref_imp,
+                        "Atributo_1": a1,
+                        "Atributo_2": a2,
+                        "Cantidad": qty,
+                    }
+                )
+                continue
+
+            # Añadir al carrito
+            ean = str(row["EAN"]).strip()
             if ean in st.session_state.carrito:
                 st.session_state.carrito[ean]["Cantidad"] += qty
             else:
                 st.session_state.carrito[ean] = {
-                    "Ref": r.get("Referencia", ""),
-                    "Nom": r.get("Nombre", ""),
-                    "Col": r.get("Color", "-"),
-                    "Tal": r.get("Talla", "-"),
+                    "Ref": row.get("Referencia", ""),
+                    "Nom": row.get("Nombre", ""),
+                    "Col": row.get("Color", "-"),
+                    "Tal": row.get("Talla", "-"),
                     "Cantidad": qty,
                 }
-            añadidas += 1
+            added_lines += 1
 
-        no_match = int(merged["EAN"].isna().sum())
-
-        if añadidas > 0:
-            st.success(f"Importación OK ✅ Líneas añadidas/actualizadas: {añadidas}")
-
-        if no_match > 0:
-            st.warning(f"Atención: {no_match} líneas no se han podido cruzar con el catálogo (no se han añadido).")
-            with st.expander("Ver líneas NO encontradas (para ajustar Color/Talla)", expanded=False):
-                st.dataframe(
-                    merged[merged["EAN"].isna()][["prod_raw", "qty", "ref_imp", "color_imp", "talla_imp"]].head(300),
-                    use_container_width=True,
-                )
+        st.session_state["import_result"] = {
+            "added": int(added_lines),
+            "no_match": int(c_no_match),
+            "no_ean": int(c_no_ean),
+            "ambiguous": int(c_amb),
+            "used_qty_col": "C" if use_c else "B",
+            "note": None,
+        }
+        st.session_state["import_issues_records"] = issues
 
         mark_dirty()
         st.rerun()
@@ -424,11 +639,61 @@ if inject:
     except Exception as e:
         st.error(f"No he podido importar el Excel: {e}")
 
+# Panel persistente de resultado de importación
+if "import_result" in st.session_state and st.session_state["import_result"]:
+    res = st.session_state["import_result"]
+    added = int(res.get("added", 0))
+    no_match = int(res.get("no_match", 0))
+    no_ean = int(res.get("no_ean", 0))
+    ambiguous = int(res.get("ambiguous", 0))
+    used_col = res.get("used_qty_col", "")
+    note = res.get("note", None)
+
+    if note:
+        st.info(note)
+
+    if added > 0:
+        st.success(f"Importación OK ✅ Líneas añadidas/actualizadas: {added} | Cantidad tomada de columna: {used_col}")
+    else:
+        st.warning(f"No se han añadido líneas | Cantidad tomada de columna: {used_col}")
+
+    if no_match + no_ean + ambiguous > 0:
+        msg_parts = []
+        if no_match > 0:
+            msg_parts.append(f"{no_match} no encontradas")
+        if ambiguous > 0:
+            msg_parts.append(f"{ambiguous} ambiguas")
+        if no_ean > 0:
+            msg_parts.append(f"{no_ean} sin EAN en catálogo")
+        st.warning("⚠️ Incidencias: " + " | ".join(msg_parts))
+
+        records = st.session_state.get("import_issues_records", [])
+        df_issues = pd.DataFrame(records) if records else pd.DataFrame(
+            columns=["Motivo", "Estrategia", "Producto_raw", "Referencia", "Atributo_1", "Atributo_2", "Cantidad"]
+        )
+
+        with st.expander("Ver incidencias de importación", expanded=False):
+            st.dataframe(df_issues, use_container_width=True)
+
+        st.download_button(
+            "⬇️ Descargar incidencias (Excel)",
+            data=make_excel_download(df_issues),
+            file_name="incidencias_importacion.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+
+    if st.button("Ocultar resultado de importación"):
+        st.session_state.pop("import_result", None)
+        st.session_state.pop("import_issues_records", None)
+        st.rerun()
+
 st.write("---")
 
-# =========================================
-# 3) BUSCADOR Y FILTROS
-# =========================================
+#
+---------------------------------------------------------
+# 3) BUSCADOR
+# ---------------------------------------------------------
 st.markdown('<div class="section-header">🔍 BUSCADOR MANUAL</div>', unsafe_allow_html=True)
 f1, f2 = st.columns([2, 1])
 busq_txt = f1.text_input("Buscar referencia, nombre o EAN...", key=f"busq_{st.session_state.search_key}")
@@ -441,7 +706,9 @@ columnas_reales = [c for c in columnas_posibles if c in df_cat.columns]
 if columnas_reales:
     cols_f = st.columns(len(columnas_reales))
     for i, col in enumerate(columnas_reales):
-        opciones = ["TODOS"] + sorted([x for x in df_cat[col].dropna().astype(str).unique().tolist() if x.strip() != ""])
+        opciones = ["TODOS"] + sorted(
+            [x for x in df_cat[col].dropna().astype(str).unique().tolist() if x.strip() != ""]
+        )
         filtros_activos[col] = cols_f[i].selectbox(f"{col}", opciones, key=f"f_{col}_{st.session_state.search_key}")
 
 df_res = df_cat
@@ -488,9 +755,9 @@ if needle or any(v != "TODOS" for v in filtros_activos.values()):
                 st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-# =========================================
+# ---------------------------------------------------------
 # 4) LISTA FINAL Y GENERACIÓN
-# =========================================
+# ---------------------------------------------------------
 if st.session_state.carrito:
     st.write("---")
     st.markdown('<div class="section-header">📋 LISTA DE REPOSICIÓN</div>', unsafe_allow_html=True)
@@ -507,9 +774,13 @@ if st.session_state.carrito:
 
         with cb:
             new_qty = st.number_input(
-                "C", 1, 9999, int(item.get("Cantidad", 1)),
-                key=f"q_{ean}", label_visibility="collapsed",
-                on_change=mark_dirty
+                "C",
+                1,
+                9999,
+                int(item.get("Cantidad", 1)),
+                key=f"q_{ean}",
+                label_visibility="collapsed",
+                on_change=mark_dirty,
             )
             item["Cantidad"] = int(new_qty)
 
@@ -523,7 +794,7 @@ if st.session_state.carrito:
 
     uds = sum(int(it.get("Cantidad", 0)) for it in st.session_state.carrito.values())
     st.markdown(
-        f'<div class="summary-box"><div>PIEZAS: {uds}</div><div>MODELOS: {len(st.session_state.carrito)}</div><div>DESTINO: {destino}</div></div>',
+        f'<div class="summary-box"><div>PIEZAS: {uds}</div><div>MODELOS: {len(st.session_state.carrito)}</div><div>DESTINO: {st.session_state.destino}</div></div>',
         unsafe_allow_html=True,
     )
 
@@ -571,9 +842,9 @@ if st.session_state.carrito:
         except Exception as e:
             st.error(f"No he podido generar el Excel: {e}")
 
-# =========================================
+# =========================================================
 # SAVE TO LOCAL STORAGE IF DIRTY
-# =========================================
+# =========================================================
 if st.session_state._dirty:
     try:
         payload = _serialize_state()
