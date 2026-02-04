@@ -77,44 +77,160 @@ def mark_dirty() -> None:
 # =========================================================
 st.markdown(
     """
+st.markdown("""
 <style>
-html, body, .stApp, .main, .block-container,
-div[data-testid="stExpander"], div[data-testid="stTab"],
-div[data-testid="stHeader"], .stTabs, [data-testid="stVerticalBlock"] {
-    background-color: #ffffff !important;
-    color: #000000 !important;
+/* --- Base --- */
+html, body, .stApp {
+  background: #FFFFFF !important;
+  color: #111111 !important;
+  font-family: ui-serif, Georgia, "Times New Roman", serif !important;
 }
+
+.main .block-container { 
+  padding-top: 2.0rem;
+  padding-bottom: 3.5rem;
+  max-width: 1200px;
+}
+
+/* Oculta el menú y footer si quieres look más “app” */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+
+/* --- Cabecera / título --- */
 .peticiones-title {
-    font-size: 2.5rem; font-weight: 800; color: #000000;
-    margin-top: 40px; margin-bottom: 20px;
-    padding-bottom: 10px; border-bottom: 2px solid #000000; width: 100%;
+  font-size: 2.6rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #111111;
+  margin: 12px 0 18px 0;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(17,17,17,0.18);
 }
+
+/* Subtítulo opcional (si lo usas) */
+.subtitle {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-size: 0.95rem;
+  color: rgba(17,17,17,0.65);
+  letter-spacing: 0.02em;
+  margin-top: -10px;
+}
+
+/* --- Section headers (más premium) --- */
 .section-header {
-    background: #000; color: #fff; padding: 8px;
-    font-weight: bold; margin-top: 20px; margin-bottom: 10px;
+  background: transparent;
+  color: #111111;
+  padding: 0;
+  margin-top: 28px;
+  margin-bottom: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.78rem;
 }
+.section-header::after{
+  content:"";
+  display:block;
+  height:1px;
+  background: rgba(17,17,17,0.14);
+  margin-top: 10px;
+}
+
+/* --- Cards / filas --- */
 .table-row {
-    border: 1px solid #000000; margin-top: -1px;
-    background-color: #ffffff !important; display: flex; align-items: center; width: 100%;
+  border: 1px solid rgba(17,17,17,0.12);
+  background: #FFFFFF !important;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border-radius: 14px;
+  margin: 10px 0;
+  box-shadow: 0 6px 18px rgba(17,17,17,0.04);
 }
-.cell-content { padding: 8px 12px; display: flex; flex-direction: column; justify-content: center; }
+
+.cell-content {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.cell-content strong {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.cell-content small {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  color: rgba(17,17,17,0.70);
+}
+
+/* --- Inputs look --- */
+div[data-baseweb="select"] > div,
+div[data-baseweb="input"] > div {
+  border-radius: 12px !important;
+}
+
+/* --- Botones: premium --- */
 .stButton>button {
-    width: 100% !important; border-radius: 0px !important; font-weight: 700 !important;
-    height: 40px; text-transform: uppercase; border: 1px solid #000000 !important; font-size: 0.7rem !important;
+  width: 100% !important;
+  border-radius: 12px !important;
+  font-weight: 700 !important;
+  height: 44px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: 1px solid rgba(17,17,17,0.18) !important;
+  font-size: 0.72rem !important;
 }
-.stButton>button[kind="secondary"] { background-color: #ffffff !important; color: #000000 !important; }
-.stButton>button[kind="primary"] { background-color: #0052FF !important; color: #ffffff !important; border: none !important; }
+
+.stButton>button[kind="secondary"] {
+  background-color: #FFFFFF !important;
+  color: #111111 !important;
+}
+
+.stButton>button[kind="primary"] {
+  background: linear-gradient(135deg, #0B2D5B 0%, #123B73 100%) !important;
+  color: #FFFFFF !important;
+  border: none !important;
+  box-shadow: 0 10px 24px rgba(11,45,91,0.18);
+}
+
+/* Hover */
+.stButton>button:hover {
+  transform: translateY(-1px);
+  transition: 120ms ease;
+}
+
+/* --- Summary box --- */
 .summary-box {
-    border: 2px solid #000000; padding: 15px; margin-top: 20px;
-    background-color: #ffffff !important; font-weight: bold;
-    display: flex; justify-content: space-between; color: #000000 !important;
+  border: 1px solid rgba(17,17,17,0.14);
+  padding: 16px 16px;
+  margin-top: 18px;
+  background: #FAF7F2 !important; /* arena */
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  color: #111111 !important;
+  border-radius: 16px;
 }
+
+/* Badges / contadores opcionales */
+.kpi {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+}
+
+/* Responsive */
 @media (max-width: 600px) {
-    .peticiones-title { font-size: 1.8rem; margin-top: 20px; }
-    .summary-box { flex-direction: column; gap: 5px; }
-    .stButton>button { font-size: 0.75rem !important; height: 48px; }
+  .peticiones-title { font-size: 1.9rem; }
+  .summary-box { flex-direction: column; gap: 8px; }
+  .stButton>button { font-size: 0.78rem !important; height: 48px; }
 }
 </style>
+""", unsafe_allow_html=True)
 """,
     unsafe_allow_html=True,
 )
