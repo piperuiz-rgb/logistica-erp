@@ -758,6 +758,10 @@ if st.session_state.carrito:
         st.session_state._dirty = False
         st.rerun()
 
+    confirmacion_almacenes = cg.checkbox(
+    "Confirmo que los almacenes de ORIGEN y DESTINO son correctos"
+    )
+
     if cg.button("GENERAR Y DESCARGAR EXCEL", type="primary"):
         if bloqueo_almacen:
             st.stop()
