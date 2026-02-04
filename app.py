@@ -486,7 +486,6 @@ ref_peticion = st.session_state.ref_peticion
 st.write("---")
 
 # ---------------------------------------------------------
----------------------------------------------------------
 # 2) IMPORTADOR MASIVO
 #    - A = producto
 #    - cantidad en C si hay algún valor >0, si no en B
