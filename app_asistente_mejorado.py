@@ -28,6 +28,7 @@ def get_default_session_state():
         'metrics': {},
         'current_step': 1,
         'uploaded_file_name': None,
+        'session_id': uuid.uuid4().hex[:12],  # Unique session identifier
     }
     return default_state
 
@@ -135,7 +136,7 @@ def load_catalog_fallback(uploaded_file):
         return None
 
 # Robust autosave function with corruption detection
-def autosave(data):
+def autosave(data, session_id=None):
     """
     Persist the processed DataFrame to a temp directory (.cache/autosave_<session_id>.csv).
     Returns the path to the saved file or None on error.
@@ -149,8 +150,10 @@ def autosave(data):
         cache_dir = os.path.join(os.getcwd(), '.cache')
         os.makedirs(cache_dir, exist_ok=True)
         
-        # Generate unique filename with timestamp for session isolation
-        session_id = uuid.uuid4().hex[:12]
+        # Use provided session_id or generate a new one
+        if session_id is None:
+            session_id = uuid.uuid4().hex[:12]
+        
         autosave_path = os.path.join(cache_dir, f'autosave_{session_id}.csv')
         
         # Save to CSV
@@ -423,8 +426,9 @@ def main():
                 with col2:
                     if 'EAN_Limpio' in data.columns:
                         valid_pct = 0.0
-                        if metrics.get('total_rows', 0) > 0:
-                            valid_pct = (metrics.get('valid_eans', 0) / metrics['total_rows']) * 100
+                        total = metrics.get('total_rows', 0)
+                        if total > 0:
+                            valid_pct = (metrics.get('valid_eans', 0) / total) * 100
                         st.write(f"**Porcentaje de EANs válidos:** {valid_pct:.1f}%")
                         
                         if metrics.get('duplicate_eans', 0) > 0:
@@ -457,7 +461,7 @@ def main():
                 # Autosave
                 st.subheader("Guardado Automático")
                 if st.button("Guardar en caché local"):
-                    autosave_path = autosave(data)
+                    autosave_path = autosave(data, session_id=st.session_state.get('session_id'))
                     if autosave_path:
                         st.success(f"✅ Archivo guardado en: {autosave_path}")
                 
@@ -465,13 +469,13 @@ def main():
                 st.subheader("Descargar Archivo")
                 csv_data = data.to_csv(index=False).encode('utf-8')
                 
-                # Use first 12 chars of UUID for better uniqueness
-                unique_id = uuid.uuid4().hex[:12]
+                # Use session_id for consistent filename
+                session_id = st.session_state.get('session_id', uuid.uuid4().hex[:12])
                 
                 st.download_button(
                     label="📥 Descargar CSV Procesado",
                     data=csv_data,
-                    file_name=f"catalogo_procesado_{unique_id}.csv",
+                    file_name=f"catalogo_procesado_{session_id}.csv",
                     mime="text/csv",
                     type="primary"
                 )
