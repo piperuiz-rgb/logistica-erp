@@ -137,7 +137,7 @@ def load_catalog_fallback(uploaded_file):
 # Robust autosave function with corruption detection
 def autosave(data):
     """
-    Persist the processed DataFrame to a temp directory (.cache/autosave.csv).
+    Persist the processed DataFrame to a temp directory (.cache/autosave_<session_id>.csv).
     Returns the path to the saved file or None on error.
     """
     if data is None or data.empty:
@@ -149,8 +149,9 @@ def autosave(data):
         cache_dir = os.path.join(os.getcwd(), '.cache')
         os.makedirs(cache_dir, exist_ok=True)
         
-        # Generate unique filename
-        autosave_path = os.path.join(cache_dir, 'autosave.csv')
+        # Generate unique filename with timestamp for session isolation
+        session_id = uuid.uuid4().hex[:12]
+        autosave_path = os.path.join(cache_dir, f'autosave_{session_id}.csv')
         
         # Save to CSV
         data.to_csv(autosave_path, index=False)
@@ -198,24 +199,27 @@ def compute_metrics(data, ean_column='Ean'):
     if data is None or data.empty:
         return {}
     
+    # Create a copy to avoid modifying the original DataFrame
+    data_copy = data.copy()
+    
     metrics = {}
-    metrics['total_rows'] = len(data)
+    metrics['total_rows'] = len(data_copy)
     
     # Check if EAN column exists (case-insensitive)
     ean_col = None
-    for col in data.columns:
+    for col in data_copy.columns:
         if col.lower() == ean_column.lower():
             ean_col = col
             break
     
     if ean_col:
         # Count valid EANs (non-null, cleaned successfully)
-        data['ean_cleaned'] = data[ean_col].apply(_clean_ean)
-        metrics['valid_eans'] = data['ean_cleaned'].notna().sum()
-        metrics['missing_eans'] = data['ean_cleaned'].isna().sum()
+        data_copy['ean_cleaned'] = data_copy[ean_col].apply(_clean_ean)
+        metrics['valid_eans'] = data_copy['ean_cleaned'].notna().sum()
+        metrics['missing_eans'] = data_copy['ean_cleaned'].isna().sum()
         
         # Count duplicates (only among valid EANs)
-        valid_eans = data['ean_cleaned'].dropna()
+        valid_eans = data_copy['ean_cleaned'].dropna()
         metrics['duplicate_eans'] = valid_eans.duplicated().sum()
     else:
         logger.warning(f"Column '{ean_column}' not found in data")
@@ -418,7 +422,9 @@ def main():
                 
                 with col2:
                     if 'EAN_Limpio' in data.columns:
-                        valid_pct = (metrics.get('valid_eans', 0) / metrics.get('total_rows', 1)) * 100
+                        valid_pct = 0.0
+                        if metrics.get('total_rows', 0) > 0:
+                            valid_pct = (metrics.get('valid_eans', 0) / metrics['total_rows']) * 100
                         st.write(f"**Porcentaje de EANs válidos:** {valid_pct:.1f}%")
                         
                         if metrics.get('duplicate_eans', 0) > 0:
@@ -459,10 +465,13 @@ def main():
                 st.subheader("Descargar Archivo")
                 csv_data = data.to_csv(index=False).encode('utf-8')
                 
+                # Use first 12 chars of UUID for better uniqueness
+                unique_id = uuid.uuid4().hex[:12]
+                
                 st.download_button(
                     label="📥 Descargar CSV Procesado",
                     data=csv_data,
-                    file_name=f"catalogo_procesado_{uuid.uuid4().hex[:8]}.csv",
+                    file_name=f"catalogo_procesado_{unique_id}.csv",
                     mime="text/csv",
                     type="primary"
                 )
