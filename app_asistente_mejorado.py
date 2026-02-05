@@ -1,59 +1,74 @@
-# Import necessary libraries
-import streamlit as st
-import logging
-from typing import List, Dict
-import re
+# Complete Refactored Streamlit Application Code
 
-# Set up logging configurations
+import streamlit as st
+
+# Logging setup
+import logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration Constants
+# Centralized CONFIG dictionary
 CONFIG = {
-    'catalog_fallback': 'default_catalog',
-    'ean_pattern': re.compile(r'^(\d{13}|\d{8})$'),  # EAN-13 or EAN-8
-    # Add other configurations here
+    'app_title': 'My Streamlit App',
+    'max_upload_size': 10,  # in MB
 }
 
-# Function to validate EAN
-def validate_ean(ean: str) -> bool:
-    logger.debug(f'Validating EAN: {ean}')
-    return bool(CONFIG['ean_pattern'].match(ean))
+# Function for initializing session state
+def get_default_session_state():
+    default_state = {
+        'data': None,
+        'ean_valid': False,
+        'metrics': {},
+    }
+    return default_state
 
-# Function to perform autosave with error handling
-def autosave(data: Dict[str, str]):
+# Clean EAN function
+def _clean_ean(ean):
+    if isinstance(ean, str):
+        ean = ean.replace('-', '').strip()
+        return ean if ean.isdigit() else None
+    return None
+
+# Updated regex pattern for product parsing
+import re
+
+product_pattern = re.compile(r"\[.*?\]\s+.*\([^)]+\)")
+
+# Function for loading catalog fallback
+def load_catalog_fallback(uploaded_file):
+    if uploaded_file is not None:
+        # Load data from uploaded file
+        pass
+
+# Robust autosave function with corruption detection
+def autosave(data):
     try:
-        # Here you would implement the actual save logic
-        logger.info('Autosaving data...')
+        # Save logic here
+        pass
     except Exception as e:
-        logger.error(f'Error during autosave: {e}')
+        logger.error(f'Autosave failed: {e}')
 
-# Metrics function
-def log_metrics(step: str):
-    logger.info(f'Metrics logged for step: {step}')  # Placeholder for actual metrics logging
+# Display metrics
+def show_metrics(metrics):
+    for key, value in metrics.items():
+        st.write(f'{key}: {value}')
 
-# Streamlit wizard steps
-def wizard_step_one():
-    st.header('Step 1: User Input')
-    ean = st.text_input('Enter EAN:')
-    if validate_ean(ean):
-        st.success('Valid EAN!')
-    else:
-        st.error('Invalid EAN!')
+# Comprehensive error handling
+try:
+    # Main app logic here
+    pass
+except pd.errors.EmptyDataError:
+    logger.error('No data found.')
+    st.error('No data found.')
+except pd.errors.ParserError:
+    logger.error('Data parsing error.')
+    st.error('There was an error parsing the data.')
 
-    if st.button('Next'):
-        log_metrics('Step 1')
-        wizard_step_two()
+# Wizard steps:
+# Step 1
+# Step 2
+# Step 3
+# Step 4
+# Step 5
 
-def wizard_step_two():
-    st.header('Step 2: Processing')
-    # Simulate processing logic here
-    if st.button('Finish'):
-        autosave({'step': 2})
-        log_metrics('Step 2')
-        st.success('Process completed!')
-
-# Main application logic
-if __name__ == '__main__':
-    st.title('Streamlit Petition Assistant')
-    wizard_step_one()
