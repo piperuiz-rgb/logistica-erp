@@ -88,14 +88,30 @@ def enrich_request(req_df, cat_df):
     req_df["_color"] = parsed.apply(lambda x: x["color"])
     req_df["_talla"] = parsed.apply(lambda x: x["talla"])
 
-    # Catálogo: si no trae color/talla en columnas, intentar parsear también
-    if cat_color_col is None or cat_talla_col is None:
-        parsed_cat = cat_df[cat_ref_col].apply(parse_referencia)
-        cat_df["_color"] = parsed_cat.apply(lambda x: x["color"])
-        cat_df["_talla"] = parsed_cat.apply(lambda x: x["talla"])
+    # Catálogo: construir _ref, _color y _talla siempre, usando columnas existentes o parseando
+    # Parse from reference if we need any of ref/color/talla
+    need_parse = (cat_color_col is None or cat_talla_col is None)
+    parsed_cat = cat_df[cat_ref_col].apply(parse_referencia) if need_parse else None
+    
+    # Build _ref: try to extract from reference column or use as-is
+    if need_parse:
+        cat_df["_ref"] = parsed_cat.apply(lambda x: x["ref"] if x["ref"] else None)
+        # If parsed ref is None, fallback to original reference column value
+        cat_df["_ref"] = cat_df["_ref"].fillna(cat_df[cat_ref_col])
     else:
+        cat_df["_ref"] = cat_df[cat_ref_col]
+    
+    # Build _color: use existing column if present, otherwise parse
+    if cat_color_col is not None:
         cat_df["_color"] = cat_df[cat_color_col]
+    else:
+        cat_df["_color"] = parsed_cat.apply(lambda x: x["color"])
+    
+    # Build _talla: use existing column if present, otherwise parse
+    if cat_talla_col is not None:
         cat_df["_talla"] = cat_df[cat_talla_col]
+    else:
+        cat_df["_talla"] = parsed_cat.apply(lambda x: x["talla"])
 
     # Merge por ref + color + talla (color/talla opcionales: se usa fillna para permitir match parcial)
     merge_keys = ["_ref", "_color", "_talla"]
